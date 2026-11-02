@@ -1,4 +1,4 @@
-import rateLimit from "express-rate-limit";
+import { rateLimit } from "express-rate-limit";
 
 // In-memory store, so limits are best-effort on serverless (reset on cold start) —
 // still raises the bar for brute force / credential stuffing / cost-abuse of paid APIs.
