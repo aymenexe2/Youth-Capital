@@ -1,13 +1,20 @@
 import express, { type Express } from "express";
 import type { IncomingMessage, ServerResponse } from "http";
 import cors from "cors";
-import helmet from "helmet";
+// Namespace import rather than a default import: Vercel's @vercel/node
+// builder type-checks against helmet's CJS typings (index.d.cts), where a
+// default import is typed as the whole module and isn't callable (TS2349).
+// `.default` is the helmet function under both the ESM and CJS typings and
+// at runtime either way (index.cjs sets module.exports.default to itself).
+import * as helmetModule from "helmet";
 import cookieParser from "cookie-parser";
 import { pinoHttp } from "pino-http";
 import router from "./routes/index.js";
 import { logger } from "./lib/logger.js";
 import { optionalAuth } from "./lib/session.js";
 import { globalLimiter } from "./middlewares/rateLimit.js";
+
+const helmet = helmetModule.default;
 
 const app: Express = express();
 
