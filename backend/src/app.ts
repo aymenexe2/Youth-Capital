@@ -31,7 +31,8 @@ const app: Express = express();
 app.set("trust proxy", 1);
 
 const isProd = process.env.NODE_ENV === "production";
-const DEV_ORIGINS = ["http://localhost:5173", "http://localhost:5174"];
+// 5175 is the organisation-management app (manage/).
+const DEV_ORIGINS = ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175"];
 const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",").map((o) => o.trim()).filter(Boolean);
 
 if (isProd && !allowedOrigins?.length) {

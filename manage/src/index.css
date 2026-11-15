@@ -1,0 +1,181 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Workspace design tokens: deep-navy navigation, light workspace, restrained
+   blue accents and matte-gold highlights (brief §10). Runtime tokens live
+   outside @theme so the .dark class can override them. */
+:root {
+  --background: hsl(220 30% 97%);
+  --foreground: hsl(222 47% 11%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: var(--foreground);
+  --primary: hsl(221 72% 44%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(220 22% 94%);
+  --secondary-foreground: hsl(222 40% 18%);
+  --muted: hsl(220 20% 95%);
+  --muted-foreground: hsl(220 12% 40%);
+  --accent: hsl(220 22% 93%);
+  --accent-foreground: var(--foreground);
+  --destructive: hsl(354 70% 46%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --border: hsl(220 18% 88%);
+  --ring: hsl(221 72% 50%);
+  --gold: hsl(41 55% 42%);
+  --gold-soft: hsl(43 70% 94%);
+
+  --navy: hsl(219 56% 13%);
+  --navy-2: hsl(219 45% 18%);
+  --navy-border: hsl(219 35% 22%);
+
+  /* Status palette — used consistently for task/project/event states. */
+  --st-neutral: hsl(220 10% 46%);
+  --st-blue: hsl(217 80% 46%);
+  --st-violet: hsl(258 60% 52%);
+  --st-amber: hsl(36 92% 40%);
+  --st-green: hsl(152 64% 32%);
+  --st-red: hsl(354 70% 46%);
+
+  --popover: var(--card);
+  --popover-foreground: var(--card-foreground);
+  --input: var(--border);
+  --button-outline: var(--border);
+  --badge-outline: var(--border);
+  --primary-border: transparent;
+  --secondary-border: var(--border);
+  --destructive-border: transparent;
+  --elevate-1: rgb(0 0 0 / 0.04);
+  --elevate-2: rgb(0 0 0 / 0.08);
+
+  --chart-1: hsl(217 80% 50%);
+  --chart-2: hsl(41 70% 50%);
+  --chart-3: hsl(152 55% 40%);
+  --chart-4: hsl(258 55% 58%);
+  --chart-5: hsl(354 65% 55%);
+}
+
+.dark {
+  --background: hsl(222 42% 7%);
+  --foreground: hsl(220 25% 94%);
+  --card: hsl(222 35% 11%);
+  --secondary: hsl(222 28% 17%);
+  --secondary-foreground: hsl(220 25% 92%);
+  --muted: hsl(222 28% 15%);
+  --muted-foreground: hsl(220 14% 66%);
+  --accent: hsl(222 28% 19%);
+  --border: hsl(222 25% 20%);
+  --primary: hsl(217 85% 62%);
+  --primary-foreground: hsl(222 47% 9%);
+  --ring: hsl(217 85% 62%);
+  --destructive: hsl(354 75% 60%);
+  --gold: hsl(43 60% 58%);
+  --gold-soft: hsl(43 30% 16%);
+  --navy: hsl(222 45% 6%);
+  --navy-2: hsl(222 38% 11%);
+  --navy-border: hsl(222 30% 15%);
+  --st-neutral: hsl(220 12% 62%);
+  --st-blue: hsl(217 85% 66%);
+  --st-violet: hsl(258 75% 74%);
+  --st-amber: hsl(38 92% 60%);
+  --st-green: hsl(152 55% 52%);
+  --st-red: hsl(354 80% 66%);
+  --elevate-1: rgb(255 255 255 / 0.04);
+  --elevate-2: rgb(255 255 255 / 0.09);
+  --chart-1: hsl(217 85% 62%);
+  --chart-2: hsl(43 70% 58%);
+  --chart-3: hsl(152 55% 50%);
+  --chart-4: hsl(258 70% 72%);
+  --chart-5: hsl(354 75% 64%);
+}
+
+@theme inline {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
+  --color-navy: var(--navy);
+  --color-navy-2: var(--navy-2);
+  --color-navy-border: var(--navy-border);
+  --color-st-neutral: var(--st-neutral);
+  --color-st-blue: var(--st-blue);
+  --color-st-violet: var(--st-violet);
+  --color-st-amber: var(--st-amber);
+  --color-st-green: var(--st-green);
+  --color-st-red: var(--st-red);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+  [dir="rtl"] body {
+    font-family: "Cairo", "Inter", ui-sans-serif, system-ui, sans-serif;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  /* Subtle hover/press feedback used by the shared button/badge primitives. */
+  .hover-elevate:not(:disabled):hover {
+    background-image: linear-gradient(var(--elevate-1), var(--elevate-1));
+  }
+  .active-elevate-2:not(:disabled):active {
+    background-image: linear-gradient(var(--elevate-2), var(--elevate-2));
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

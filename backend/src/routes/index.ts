@@ -16,6 +16,8 @@ import chatRouter from "./chat.js";
 import adminRouter from "./admin.js";
 import saharaRouter from "./sahara.js";
 import emailRouter from "./email.js";
+import orgRouter from "./org/index.js";
+import cronRouter from "./cron.js";
 
 const router: IRouter = Router();
 
@@ -36,5 +38,7 @@ router.use("/chat", chatRouter);
 router.use("/admin", adminRouter);
 router.use("/sahara-feedback", saharaRouter);
 router.use("/admin/email", emailRouter);
+router.use("/org", orgRouter);
+router.use("/cron", cronRouter);
 
 export default router;

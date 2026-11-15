@@ -4,6 +4,7 @@
   "license": "MIT",
   "workspaces": [
     "frontend",
+    "manage",
     "backend",
     "sandbox",
     "packages/*",
@@ -16,7 +17,8 @@
     "dev": "npm run dev:frontend & npm run dev:backend",
     "seed": "npm run seed -w scripts",
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev:manage": "npm run dev -w manage"
   },
   "private": true,
   "devDependencies": {

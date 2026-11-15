@@ -5,7 +5,7 @@ import { eq, sql } from "drizzle-orm";
 import { authLimiter } from "../middlewares/rateLimit.js";
 import { hashPassword } from "../lib/password.js";
 import { createSession, SESSION_COOKIE_OPTIONS } from "../lib/session.js";
-import { apiBaseUrl, frontendUrl } from "../lib/urls.js";
+import { apiBaseUrl, frontendUrl, manageUrl } from "../lib/urls.js";
 import { logAudit } from "../lib/audit.js";
 
 // "Continue with Google / LinkedIn" via OpenID Connect (authorization code flow).
@@ -53,7 +53,10 @@ const STATE_COOKIE_OPTIONS = {
   path: "/api/auth/oauth",
 };
 
-const fail = (res: Response, code: string) => res.redirect(`${frontendUrl()}/login?oauth_error=${encodeURIComponent(code)}`);
+// Sign-ins started from the organisation-management app (?app=manage) return there.
+type App = "site" | "manage";
+const appUrl = (app: App) => (app === "manage" ? manageUrl() : frontendUrl());
+const fail = (res: Response, code: string, app: App = "site") => res.redirect(`${appUrl(app)}/login?oauth_error=${encodeURIComponent(code)}`);
 
 // Which buttons the login page should show.
 router.get("/oauth/providers", (_req, res) => {
@@ -62,14 +65,16 @@ router.get("/oauth/providers", (_req, res) => {
 
 router.get("/oauth/:provider", authLimiter, (req, res) => {
   const provider = String(req.params.provider);
+  const app: App = req.query.app === "manage" ? "manage" : "site";
   if (!isProvider(provider) || !isConfigured(provider)) {
-    fail(res, "provider_unavailable");
+    fail(res, "provider_unavailable", app);
     return;
   }
   const lang = req.query.lang === "ar" ? "ar" : "en";
   const nonce = crypto.randomBytes(24).toString("hex");
-  // The state carries the language so new accounts get the right default.
-  const state = `${nonce}.${lang}`;
+  // The state carries the language (so new accounts get the right default)
+  // and which app to return to.
+  const state = `${nonce}.${lang}.${app}`;
   res.cookie(STATE_COOKIE, nonce, STATE_COOKIE_OPTIONS);
 
   const cfg = PROVIDERS[provider];
@@ -86,23 +91,24 @@ router.get("/oauth/:provider", authLimiter, (req, res) => {
 
 router.get("/oauth/:provider/callback", async (req, res) => {
   const provider = String(req.params.provider);
+  const [nonce, lang = "en", appParam] = String(req.query.state || "").split(".");
+  const app: App = appParam === "manage" ? "manage" : "site";
   if (!isProvider(provider) || !isConfigured(provider)) {
-    fail(res, "provider_unavailable");
+    fail(res, "provider_unavailable", app);
     return;
   }
   try {
     if (req.query.error) {
       // e.g. the user pressed "Cancel" on the consent screen.
-      fail(res, "cancelled");
+      fail(res, "cancelled", app);
       return;
     }
     const code = String(req.query.code || "");
-    const [nonce, lang = "en"] = String(req.query.state || "").split(".");
     const expected = req.cookies?.[STATE_COOKIE];
     res.clearCookie(STATE_COOKIE, { ...STATE_COOKIE_OPTIONS, maxAge: undefined });
     if (!code || !nonce || !expected || nonce.length !== expected.length ||
         !crypto.timingSafeEqual(Buffer.from(nonce), Buffer.from(expected))) {
-      fail(res, "invalid_state");
+      fail(res, "invalid_state", app);
       return;
     }
 
@@ -121,7 +127,7 @@ router.get("/oauth/:provider/callback", async (req, res) => {
     const tokens: any = await tokenRes.json().catch(() => ({}));
     if (!tokenRes.ok || !tokens.access_token) {
       req.log.error({ provider, status: tokenRes.status, error: tokens.error }, "OAuth token exchange failed");
-      fail(res, "token_exchange_failed");
+      fail(res, "token_exchange_failed", app);
       return;
     }
 
@@ -132,14 +138,14 @@ router.get("/oauth/:provider/callback", async (req, res) => {
     // claim someone else's address and take over their account.
     const verified = info.email_verified === true || info.email_verified === "true";
     if (!infoRes.ok || !email || !verified) {
-      fail(res, "email_not_verified");
+      fail(res, "email_not_verified", app);
       return;
     }
 
     let [user] = await db.select().from(usersTable).where(sql`lower(${usersTable.email}) = ${email}`);
     let isNew = false;
     if (user && user.status === "banned") {
-      fail(res, "banned");
+      fail(res, "banned", app);
       return;
     }
     if (!user) {
@@ -169,10 +175,10 @@ router.get("/oauth/:provider/callback", async (req, res) => {
     const dest = user.role === "admin" ? "/admin"
       : user.applicationStatus === "none" ? `/apply?oauth=${provider}`
       : "/dashboard";
-    res.redirect(`${frontendUrl()}${dest}`);
+    res.redirect(app === "manage" ? `${manageUrl()}/` : `${frontendUrl()}${dest}`);
   } catch (err) {
     req.log.error({ err, provider }, "OAuth callback error");
-    fail(res, "server_error");
+    fail(res, "server_error", app);
   }
 });
 

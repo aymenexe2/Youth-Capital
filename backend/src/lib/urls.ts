@@ -16,3 +16,10 @@ export function apiBaseUrl(req: Request): string {
   if (explicit) return explicit.replace(/\/+$/, "");
   return `${req.protocol}://${req.get("host")}`;
 }
+
+// Where the organisation-management app (the separate "manage" frontend) is
+// hosted — used for invitation links, notification emails and to send
+// Google/LinkedIn sign-ins started there back to it.
+export function manageUrl(): string {
+  return (process.env.MANAGE_URL?.trim() || "http://localhost:5175").replace(/\/+$/, "");
+}
