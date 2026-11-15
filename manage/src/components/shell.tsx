@@ -50,16 +50,18 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   const isActive = (href: string) => (href === path("") ? location === href || location === `${href}/` : location.startsWith(href));
 
   return (
-    <div className="brand-surface relative flex h-full flex-col overflow-hidden text-white lg:rounded-[28px] lg:shadow-[0_20px_50px_-20px_rgb(11_42_107/0.7)] lg:ring-1 lg:ring-white/10">
+    // Frosted glass: white in light mode with the blue logo, dark in dark mode with the white logo.
+    <div className="relative flex h-full flex-col overflow-hidden border border-white/70 bg-white/60 text-foreground backdrop-blur-2xl backdrop-saturate-150 dark:border-white/10 dark:bg-[rgb(24_26_36/0.6)] lg:rounded-[28px] lg:shadow-[0_20px_50px_-24px_rgb(30_64_175/0.35)]">
       <div className="px-5 pb-4 pt-6">
-        <img src="/youth_capital_logo_light.svg" alt="Youth Capital" className="h-11 w-auto" />
-        <div className="mt-4 flex items-center gap-2.5 rounded-2xl bg-white/10 p-2 ring-1 ring-inset ring-white/15 backdrop-blur-md">
+        <img src="/youth_capital_logo_dark.svg" alt="Youth Capital" className="h-11 w-auto dark:hidden" />
+        <img src="/youth_capital_logo_light.svg" alt="Youth Capital" className="hidden h-11 w-auto dark:block" />
+        <div className="mt-4 flex items-center gap-2.5 rounded-2xl bg-muted p-2">
           {org.logoUrl
-            ? <img src={org.logoUrl} alt="" className="size-8 rounded-[10px] bg-white object-contain p-0.5" />
-            : <span className="grid size-8 place-items-center rounded-[10px] bg-white/90 text-xs font-bold text-[#0a3d9e]">{org.name.slice(0, 2).toUpperCase()}</span>}
+            ? <img src={org.logoUrl} alt="" className="size-8 rounded-[10px] bg-white object-contain p-0.5 ring-1 ring-black/5" />
+            : <span className="brand-surface grid size-8 place-items-center rounded-[10px] text-xs font-bold text-white">{org.name.slice(0, 2).toUpperCase()}</span>}
           <div className="min-w-0">
             <div className="truncate text-[13px] font-semibold leading-tight">{org.name}</div>
-            <div className="text-[11px] font-medium text-white/65">{t("Workspace")}</div>
+            <div className="text-[11px] font-medium text-muted-foreground">{t("Workspace")}</div>
           </div>
         </div>
       </div>
@@ -75,7 +77,7 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
               aria-current={active ? "page" : undefined}
               className={cn(
                 "group flex items-center gap-3 rounded-2xl px-2 py-1.5 text-[14px] font-medium transition-all duration-200",
-                active ? "bg-white/20 text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.25)] ring-1 ring-inset ring-white/20" : "text-white/80 hover:bg-white/10 hover:text-white",
+                active ? "bg-primary/10 text-primary ring-1 ring-inset ring-primary/15 dark:bg-white/10 dark:text-white dark:ring-white/15" : "text-foreground/80 hover:bg-muted hover:text-foreground",
               )}
             >
               <IconTile icon={item.icon} tone={item.tone} size={30} />
@@ -86,10 +88,10 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
       </nav>
 
       <div className="p-3">
-        <div className="rounded-2xl bg-white/10 px-3 py-2.5 ring-1 ring-inset ring-white/15 backdrop-blur-md">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-white/60">{t("Your role")}</div>
-          <div className="truncate text-sm font-semibold text-white">{me.role.name}</div>
-          {me.title && me.title !== me.role.name && <div className="truncate text-xs text-white/65">{me.title}</div>}
+        <div className="rounded-2xl bg-muted px-3 py-2.5">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{t("Your role")}</div>
+          <div className="truncate text-sm font-semibold">{me.role.name}</div>
+          {me.title && me.title !== me.role.name && <div className="truncate text-xs text-muted-foreground">{me.title}</div>}
         </div>
       </div>
     </div>
@@ -297,7 +299,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* Floating glass-blue sidebar, inset from the window edge like macOS. */}
       <aside className="sticky top-0 hidden h-screen w-[17.5rem] shrink-0 p-3 pe-0 lg:block print:hidden"><SidebarBody /></aside>
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-        <SheetContent side={dir === "rtl" ? "right" : "left"} className="w-72 border-none bg-transparent p-0 [&>button]:text-white">
+        <SheetContent side={dir === "rtl" ? "right" : "left"} className="w-72 border-none bg-transparent p-0">
           <SheetTitle className="sr-only">{t("Navigation")}</SheetTitle>
           <SidebarBody onNavigate={() => setMobileOpen(false)} />
         </SheetContent>

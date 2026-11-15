@@ -33,11 +33,25 @@ app.set("trust proxy", 1);
 const isProd = process.env.NODE_ENV === "production";
 // 5175 is the organisation-management app (manage/).
 const DEV_ORIGINS = ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175"];
-// Browsers send Origin without a trailing slash, so strip any from the config
-// ("https://example.org/" would otherwise never match).
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",").map((o) => o.trim().replace(/\/+$/, "")).filter(Boolean);
+// Browsers send Origin as scheme://host with no trailing slash, so normalise
+// config entries the same way (stray quotes, paths and trailing slashes would
+// otherwise never match). The two app URLs are always allowed too, so a
+// mistyped ALLOWED_ORIGINS can't lock out the sites this API exists to serve.
+const toOrigin = (value: string) => {
+  const v = value.trim().replace(/^["']|["']$/g, "");
+  try {
+    return new URL(v).origin;
+  } catch {
+    return v.replace(/\/+$/, "");
+  }
+};
+const allowedOrigins = [
+  ...(process.env.ALLOWED_ORIGINS?.split(",") ?? []),
+  process.env.FRONTEND_URL ?? "",
+  process.env.MANAGE_URL ?? "",
+].map(toOrigin).filter((o) => o && o !== "null");
 
-if (isProd && !allowedOrigins?.length) {
+if (isProd && !allowedOrigins.length) {
   logger.warn("ALLOWED_ORIGINS is not set in production — cross-origin requests will be rejected.");
 }
 
@@ -85,7 +99,7 @@ app.use(
         callback(null, true);
         return;
       }
-      const allowList = allowedOrigins?.length ? allowedOrigins : isProd ? [] : DEV_ORIGINS;
+      const allowList = isProd ? allowedOrigins : [...allowedOrigins, ...DEV_ORIGINS];
       // Omit CORS headers rather than throwing — the browser then blocks the
       // response from being read, without us leaking a stack trace via Express's
       // default error handler.
