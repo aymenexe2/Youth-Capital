@@ -933,4 +933,6 @@ export const ar: Record<string, string> = {
   "Services": "الخدمات",
   "Fees": "الرسوم",
   "Uncategorised": "غير مصنف",
+  "Collapse sidebar": "طي القائمة",
+  "Expand sidebar": "توسيع القائمة",
 };

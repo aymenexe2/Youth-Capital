@@ -933,4 +933,6 @@ export const fr: Record<string, string> = {
   "Services": "Prestations",
   "Fees": "Frais",
   "Uncategorised": "Non classé",
+  "Collapse sidebar": "Réduire le menu",
+  "Expand sidebar": "Déplier le menu",
 };

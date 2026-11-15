@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useTheme } from "next-themes";
 import {
   Activity, Bell, Building2, CalendarDays, Check, CheckSquare, ChevronsUpDown, FolderKanban, Globe, HandCoins,
-  HeartHandshake, LayoutDashboard, LogOut, Menu, Moon, Plus, Search, Settings, Sun, Trophy, Users, UsersRound, type LucideIcon,
+  HeartHandshake, LayoutDashboard, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sun, Trophy, Users, UsersRound, type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LANGS, useI18n } from "@/lib/i18n";
@@ -19,82 +19,133 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { DialogTitle } from "@/components/ui/dialog";
-import { IconTile, PersonAvatar, type Tone } from "./primitives";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { PersonAvatar } from "./primitives";
 
-type NavItem = { href: string; label: string; icon: LucideIcon; tone: Tone; show?: boolean };
+type NavItem = { href: string; label: string; icon: LucideIcon; show?: boolean };
+
+const COLLAPSE_KEY = "manage-sidebar-collapsed";
 
 function useNav() {
   const { t } = useI18n();
   const { path, can } = useOrg();
   const main: NavItem[] = [
-    { href: path(""), label: t("Dashboard"), icon: LayoutDashboard, tone: "blue" },
-    { href: path("/members"), label: t("Members"), icon: Users, tone: "indigo" },
-    { href: path("/committees"), label: t("Committees"), icon: UsersRound, tone: "violet" },
-    { href: path("/projects"), label: t("Projects"), icon: FolderKanban, tone: "teal" },
-    { href: path("/events"), label: t("Events"), icon: CalendarDays, tone: "pink" },
-    { href: path("/tasks"), label: t("Tasks"), icon: CheckSquare, tone: "green" },
-    { href: path("/performance"), label: t("Performance"), icon: Trophy, tone: "amber" },
-    { href: path("/finance"), label: t("Finance"), icon: HandCoins, tone: "gold" },
-    { href: path("/sponsors"), label: t("Sponsors"), icon: HeartHandshake, tone: "red", show: can("sponsors.manage") || can("sponsor.publish_update") || can("finance.view") },
-    { href: path("/activity"), label: t("Activity"), icon: Activity, tone: "neutral" },
-    { href: path("/settings"), label: t("Settings"), icon: Settings, tone: "neutral", show: can("org.manage") || can("roles.manage") || can("regions.manage") },
+    { href: path(""), label: t("Dashboard"), icon: LayoutDashboard },
+    { href: path("/members"), label: t("Members"), icon: Users },
+    { href: path("/committees"), label: t("Committees"), icon: UsersRound },
+    { href: path("/projects"), label: t("Projects"), icon: FolderKanban },
+    { href: path("/events"), label: t("Events"), icon: CalendarDays },
+    { href: path("/tasks"), label: t("Tasks"), icon: CheckSquare },
+    { href: path("/performance"), label: t("Performance"), icon: Trophy },
+    { href: path("/finance"), label: t("Finance"), icon: HandCoins },
+    { href: path("/sponsors"), label: t("Sponsors"), icon: HeartHandshake, show: can("sponsors.manage") || can("sponsor.publish_update") || can("finance.view") },
+    { href: path("/activity"), label: t("Activity"), icon: Activity },
+    { href: path("/settings"), label: t("Settings"), icon: Settings, show: can("org.manage") || can("roles.manage") || can("regions.manage") },
   ];
   return { main: main.filter((i) => i.show !== false) };
 }
 
-function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
-  const { t } = useI18n();
+// Organisation logos come in any shape. Square-ish images get a round crop
+// (like the account avatar); wide wordmarks are shown whole in a white tile,
+// since cropping them to a circle just zooms into the middle.
+function OrgLogo({ url, name }: { url: string | null; name: string }) {
+  const [shape, setShape] = useState<"square" | "wide" | "failed" | null>(null);
+  useEffect(() => setShape(null), [url]);
+  if (!url || shape === "failed") {
+    return <span className="brand-surface grid size-9 shrink-0 place-items-center rounded-full text-xs font-bold text-white ring-2 ring-card">{name.slice(0, 2).toUpperCase()}</span>;
+  }
+  return (
+    <img
+      src={url}
+      alt=""
+      referrerPolicy="no-referrer"
+      onLoad={(e) => setShape(e.currentTarget.naturalWidth / Math.max(1, e.currentTarget.naturalHeight) > 1.25 ? "wide" : "square")}
+      onError={() => setShape("failed")}
+      className={cn(
+        "size-9 shrink-0 bg-white ring-2 ring-card",
+        shape === "wide" ? "rounded-xl object-contain p-1" : "rounded-full object-cover",
+        shape === null && "opacity-0",
+      )}
+    />
+  );
+}
+
+// Collapsed: an icon-only rail; labels appear as tooltips.
+function SidebarBody({ onNavigate, collapsed = false }: { onNavigate?: () => void; collapsed?: boolean }) {
+  const { t, dir } = useI18n();
   const { org, me, path } = useOrg();
   const [location] = useLocation();
   const { main } = useNav();
   const isActive = (href: string) => (href === path("") ? location === href || location === `${href}/` : location.startsWith(href));
+  const tipSide = dir === "rtl" ? "left" : "right";
+  const orgMark = <OrgLogo url={org.logoUrl} name={org.name} />;
 
   return (
-    // Frosted glass: white in light mode with the blue logo, dark in dark mode with the white logo.
+    // Frosted glass: white in light mode with the navy-text logo, dark in dark mode with the cream-text logo.
     <div className="relative flex h-full flex-col overflow-hidden border border-white/70 bg-white/60 text-foreground backdrop-blur-2xl backdrop-saturate-150 dark:border-white/10 dark:bg-[rgb(24_26_36/0.6)] lg:rounded-[28px] lg:shadow-[0_20px_50px_-24px_rgb(30_64_175/0.35)]">
-      <div className="px-5 pb-4 pt-6">
-        <img src="/youth_capital_logo_light.svg" alt="Youth Capital" className="h-11 w-auto dark:hidden" />
-        <img src="/youth_capital_logo_dark.svg" alt="Youth Capital" className="hidden h-11 w-auto dark:block" />
-        <div className="mt-4 flex items-center gap-2.5 rounded-2xl bg-muted p-2">
-          {/* Same treatment as the account avatar in the top bar: round, image cropped to fill. */}
-          {org.logoUrl
-            ? <img src={org.logoUrl} alt="" className="size-9 shrink-0 rounded-full bg-white object-cover ring-2 ring-card" referrerPolicy="no-referrer" />
-            : <span className="brand-surface grid size-9 shrink-0 place-items-center rounded-full text-xs font-bold text-white ring-2 ring-card">{org.name.slice(0, 2).toUpperCase()}</span>}
-          <div className="min-w-0">
-            <div className="truncate text-[13px] font-semibold leading-tight">{org.name}</div>
-            <div className="text-[11px] font-medium text-muted-foreground">{t("Workspace")}</div>
+      <div className={cn("pb-4 pt-6", collapsed ? "px-3" : "px-5")}>
+        {collapsed ? (
+          <img src="/favicon.svg" alt="Youth Capital" className="mx-auto size-10" />
+        ) : (
+          <>
+            <img src="/youth_capital_logo_light.svg" alt="Youth Capital" className="h-11 w-auto dark:hidden" />
+            <img src="/youth_capital_logo_dark.svg" alt="Youth Capital" className="hidden h-11 w-auto dark:block" />
+          </>
+        )}
+        {collapsed ? (
+          <Tooltip>
+            <TooltipTrigger asChild><div className="mt-4 flex justify-center">{orgMark}</div></TooltipTrigger>
+            <TooltipContent side={tipSide}>{org.name}</TooltipContent>
+          </Tooltip>
+        ) : (
+          <div className="mt-4 flex items-center gap-2.5 rounded-2xl bg-muted p-2">
+            {orgMark}
+            <div className="min-w-0">
+              <div className="truncate text-[13px] font-semibold leading-tight">{org.name}</div>
+              <div className="text-[11px] font-medium text-muted-foreground">{t("Workspace")}</div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      <nav className="scrollbar-thin flex-1 space-y-1 overflow-y-auto px-3 pb-3" aria-label={t("Main navigation")}>
+      <nav className={cn("scrollbar-thin flex-1 space-y-1 overflow-y-auto pb-3", collapsed ? "px-2.5" : "px-3")} aria-label={t("Main navigation")}>
         {main.map((item) => {
           const active = isActive(item.href);
-          return (
+          const link = (
             <Link
               key={item.href}
               href={item.href}
               onClick={onNavigate}
               aria-current={active ? "page" : undefined}
+              aria-label={collapsed ? item.label : undefined}
               className={cn(
-                "group flex items-center gap-3 rounded-2xl px-2 py-1.5 text-[14px] font-medium transition-all duration-200",
-                active ? "bg-primary/10 text-primary ring-1 ring-inset ring-primary/15 dark:bg-white/10 dark:text-white dark:ring-white/15" : "text-foreground/80 hover:bg-muted hover:text-foreground",
+                "group flex items-center gap-3 rounded-xl text-[14px] font-medium transition-colors duration-150",
+                collapsed ? "size-11 justify-center" : "px-3 py-2.5",
+                active ? "bg-primary text-primary-foreground shadow-[0_6px_16px_-8px_rgb(10_108_255/0.7)]" : "text-foreground/75 hover:bg-muted hover:text-foreground",
               )}
             >
-              <IconTile icon={item.icon} tone={item.tone} size={30} />
-              <span className={cn(active && "font-semibold")}>{item.label}</span>
+              <item.icon className={cn("size-[19px] shrink-0", !active && "text-muted-foreground group-hover:text-foreground")} strokeWidth={active ? 2.2 : 1.9} />
+              {!collapsed && <span className={cn("truncate", active && "font-semibold")}>{item.label}</span>}
             </Link>
           );
+          return collapsed ? (
+            <Tooltip key={item.href}>
+              <TooltipTrigger asChild>{link}</TooltipTrigger>
+              <TooltipContent side={tipSide}>{item.label}</TooltipContent>
+            </Tooltip>
+          ) : link;
         })}
       </nav>
 
-      <div className="p-3">
-        <div className="rounded-2xl bg-muted px-3 py-2.5">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{t("Your role")}</div>
-          <div className="truncate text-sm font-semibold">{me.role.name}</div>
-          {me.title && me.title !== me.role.name && <div className="truncate text-xs text-muted-foreground">{me.title}</div>}
+      {!collapsed && (
+        <div className="p-3">
+          <div className="rounded-2xl bg-muted px-3 py-2.5">
+            <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{t("Your role")}</div>
+            <div className="truncate text-sm font-semibold">{me.role.name}</div>
+            {me.title && me.title !== me.role.name && <div className="truncate text-xs text-muted-foreground">{me.title}</div>}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -283,22 +334,32 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { t, dir } = useI18n();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem(COLLAPSE_KEY) === "1"; } catch { return false; }
+  });
   const [location] = useLocation();
 
   useEffect(() => {
+    try { localStorage.setItem(COLLAPSE_KEY, collapsed ? "1" : "0"); } catch { /* storage unavailable */ }
+  }, [collapsed]);
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setPaletteOpen((o) => !o); }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") { e.preventDefault(); setCollapsed((c) => !c); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   useEffect(() => { window.scrollTo({ top: 0 }); }, [location]);
   const isMac = useMemo(() => /Mac|iPhone|iPad/.test(navigator.platform), []);
+  const CollapseIcon = collapsed !== (dir === "rtl") ? PanelLeftOpen : PanelLeftClose;
 
   return (
     <div className="flex min-h-screen">
-      {/* Floating glass-blue sidebar, inset from the window edge like macOS. */}
-      <aside className="sticky top-0 hidden h-screen w-[17.5rem] shrink-0 p-3 pe-0 lg:block print:hidden"><SidebarBody /></aside>
+      {/* Floating glass sidebar, inset from the window edge like macOS; collapses to an icon rail. */}
+      <aside className={cn("sticky top-0 hidden h-screen shrink-0 p-3 pe-0 transition-[width] duration-300 ease-out lg:block print:hidden", collapsed ? "w-[5.5rem]" : "w-[17.5rem]")}>
+        <SidebarBody collapsed={collapsed} />
+      </aside>
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side={dir === "rtl" ? "right" : "left"} className="w-72 border-none bg-transparent p-0">
           <SheetTitle className="sr-only">{t("Navigation")}</SheetTitle>
@@ -311,6 +372,16 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button type="button" className="grid size-9 place-items-center rounded-xl text-muted-foreground hover:bg-muted lg:hidden" onClick={() => setMobileOpen(true)} aria-label={t("Open menu")}>
             <Menu className="size-5" />
           </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button type="button" onClick={() => setCollapsed((c) => !c)} aria-expanded={!collapsed}
+                aria-label={collapsed ? t("Expand sidebar") : t("Collapse sidebar")}
+                className="hidden size-9 place-items-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground lg:grid">
+                <CollapseIcon className="size-5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{collapsed ? t("Expand sidebar") : t("Collapse sidebar")} <kbd className="ms-1 opacity-70">{isMac ? "⌘" : "Ctrl"} B</kbd></TooltipContent>
+          </Tooltip>
           <button
             type="button"
             onClick={() => setPaletteOpen(true)}
