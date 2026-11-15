@@ -4,7 +4,7 @@ import { LanguageMenu, ThemeToggle } from "./shell";
 // Layout for pages outside an organisation (picker, invitation, creation).
 export function CenteredPage({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-screen flex-col">
       <header className="flex items-center justify-between px-4 py-4 sm:px-8">
         <img src="/youth_capital_logo_dark.svg" alt="Youth Capital" className="h-9 w-auto dark:hidden" />
         <img src="/youth_capital_logo_light.svg" alt="Youth Capital" className="hidden h-9 w-auto dark:block" />

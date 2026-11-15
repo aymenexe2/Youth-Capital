@@ -43,7 +43,7 @@ export default function CommitteesPage() {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{t(COMMITTEE_KIND[g.kind])}</h2>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {g.items.map((c) => (
-              <Link key={c.id} href={path(`/committees/${c.id}`)} className="group relative overflow-hidden rounded-xl border border-border bg-card p-5 transition-colors hover:border-primary/40">
+              <Link key={c.id} href={path(`/committees/${c.id}`)} className="group relative overflow-hidden rounded-2xl border bg-card p-5 transition-colors hover:border-primary/40">
                 <span className="absolute inset-y-0 start-0 w-1" style={{ background: c.color ?? "var(--st-blue)" }} />
                 <div className="flex items-start justify-between gap-2">
                   <h3 className="font-semibold group-hover:text-primary">{c.name}</h3>

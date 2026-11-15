@@ -8,7 +8,7 @@ import { API_URL, SITE_URL } from "@/lib/env";
 import { useSession } from "@/hooks/use-session";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Field } from "@/components/primitives";
+import { Field, IconTile } from "@/components/primitives";
 import { LanguageMenu, ThemeToggle } from "@/components/shell";
 
 const OAUTH_ERRORS: Record<string, string> = {
@@ -62,23 +62,24 @@ export default function LoginPage() {
 
   return (
     <div className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
-      <aside className="relative hidden overflow-hidden bg-navy p-12 text-white lg:flex lg:flex-col">
-        <div className="absolute -end-24 -top-24 size-96 rounded-full bg-gold/10 blur-3xl" />
-        <div className="absolute -bottom-32 -start-16 size-96 rounded-full bg-[hsl(221_72%_44%)]/20 blur-3xl" />
-        <img src="/youth_capital_logo_light.svg" alt="Youth Capital" className="relative h-12 w-auto self-start" />
+      <aside className="brand-surface relative m-3 hidden overflow-hidden rounded-[32px] p-12 text-white shadow-[0_30px_60px_-30px_rgb(11_42_107/0.8)] lg:flex lg:flex-col">
+        <div className="absolute -end-24 -top-24 size-96 rounded-full bg-[#5ac8fa]/25 blur-3xl" />
+        <div className="absolute -bottom-32 -start-16 size-96 rounded-full bg-[#af52de]/30 blur-3xl" />
+        <img src="/youth_capital_logo_light.svg" alt="Youth Capital" className="relative h-14 w-auto self-start" />
         <div className="relative mt-auto max-w-lg">
-          <p className="text-sm font-semibold uppercase tracking-widest text-gold">{t("Organisation workspace")}</p>
-          <h1 className="mt-3 text-4xl font-semibold leading-tight">{t("Organise, coordinate and deliver — in one place.")}</h1>
-          <ul className="mt-8 space-y-4 text-white/80">
-            {[
-              [Users, t("Members, committees and regions with clear roles")],
-              [FolderKanban, t("Projects, events and tasks with owners and deadlines")],
-              [CheckCircle2, t("Every completed task validated and recorded")],
-              [ShieldCheck, t("Private by default — you only see what your role allows")],
-            ].map(([Icon, text], i) => {
-              const I = Icon as typeof Users;
-              return <li key={i} className="flex items-center gap-3"><I className="size-5 text-gold" />{text as string}</li>;
-            })}
+          <span className="inline-flex rounded-full bg-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-white ring-1 ring-inset ring-white/25 backdrop-blur-md">{t("Organisation workspace")}</span>
+          <h1 className="mt-4 text-[44px] font-bold leading-[1.08] tracking-tight">{t("Organise, coordinate and deliver — in one place.")}</h1>
+          <ul className="mt-10 grid gap-3">
+            {([
+              [Users, t("Members, committees and regions with clear roles"), "indigo"],
+              [FolderKanban, t("Projects, events and tasks with owners and deadlines"), "teal"],
+              [CheckCircle2, t("Every completed task validated and recorded"), "green"],
+              [ShieldCheck, t("Private by default — you only see what your role allows"), "amber"],
+            ] as const).map(([Icon, text, tone], i) => (
+              <li key={i} className="flex items-center gap-3 rounded-2xl bg-white/10 p-2.5 pe-4 text-[15px] text-white/95 ring-1 ring-inset ring-white/15 backdrop-blur-md">
+                <IconTile icon={Icon} tone={tone} size={36} />{text}
+              </li>
+            ))}
           </ul>
         </div>
       </aside>
@@ -86,10 +87,10 @@ export default function LoginPage() {
       <main className="flex flex-col">
         <div className="flex justify-end gap-1 p-4"><LanguageMenu /><ThemeToggle /></div>
         <div className="flex flex-1 items-center justify-center px-6 pb-16">
-          <div className="w-full max-w-sm">
+          <div className="w-full max-w-sm rounded-[28px] border bg-card p-7 sm:p-8">
             <img src="/youth_capital_logo_dark.svg" alt="Youth Capital" className="mb-8 h-10 w-auto dark:hidden lg:hidden" />
             <img src="/youth_capital_logo_light.svg" alt="Youth Capital" className="mb-8 hidden h-10 w-auto dark:block lg:dark:hidden" />
-            <h2 className="text-2xl font-semibold tracking-tight">{t("Sign in")}</h2>
+            <h2 className="text-[28px] font-bold tracking-tight">{t("Sign in")}</h2>
             <p className="mt-1 text-sm text-muted-foreground">{t("Use your Youth Capital account.")}</p>
 
             {(providers.data?.google || providers.data?.linkedin) && (

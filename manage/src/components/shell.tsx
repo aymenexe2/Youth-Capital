@@ -19,25 +19,25 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { DialogTitle } from "@/components/ui/dialog";
-import { PersonAvatar } from "./primitives";
+import { IconTile, PersonAvatar, type Tone } from "./primitives";
 
-type NavItem = { href: string; label: string; icon: LucideIcon; show?: boolean };
+type NavItem = { href: string; label: string; icon: LucideIcon; tone: Tone; show?: boolean };
 
 function useNav() {
   const { t } = useI18n();
   const { path, can } = useOrg();
   const main: NavItem[] = [
-    { href: path(""), label: t("Dashboard"), icon: LayoutDashboard },
-    { href: path("/members"), label: t("Members"), icon: Users },
-    { href: path("/committees"), label: t("Committees"), icon: UsersRound },
-    { href: path("/projects"), label: t("Projects"), icon: FolderKanban },
-    { href: path("/events"), label: t("Events"), icon: CalendarDays },
-    { href: path("/tasks"), label: t("Tasks"), icon: CheckSquare },
-    { href: path("/performance"), label: t("Performance"), icon: Trophy },
-    { href: path("/finance"), label: t("Finance"), icon: HandCoins },
-    { href: path("/sponsors"), label: t("Sponsors"), icon: HeartHandshake, show: can("sponsors.manage") || can("sponsor.publish_update") || can("finance.view") },
-    { href: path("/activity"), label: t("Activity"), icon: Activity },
-    { href: path("/settings"), label: t("Settings"), icon: Settings, show: can("org.manage") || can("roles.manage") || can("regions.manage") },
+    { href: path(""), label: t("Dashboard"), icon: LayoutDashboard, tone: "blue" },
+    { href: path("/members"), label: t("Members"), icon: Users, tone: "indigo" },
+    { href: path("/committees"), label: t("Committees"), icon: UsersRound, tone: "violet" },
+    { href: path("/projects"), label: t("Projects"), icon: FolderKanban, tone: "teal" },
+    { href: path("/events"), label: t("Events"), icon: CalendarDays, tone: "pink" },
+    { href: path("/tasks"), label: t("Tasks"), icon: CheckSquare, tone: "green" },
+    { href: path("/performance"), label: t("Performance"), icon: Trophy, tone: "amber" },
+    { href: path("/finance"), label: t("Finance"), icon: HandCoins, tone: "gold" },
+    { href: path("/sponsors"), label: t("Sponsors"), icon: HeartHandshake, tone: "red", show: can("sponsors.manage") || can("sponsor.publish_update") || can("finance.view") },
+    { href: path("/activity"), label: t("Activity"), icon: Activity, tone: "neutral" },
+    { href: path("/settings"), label: t("Settings"), icon: Settings, tone: "neutral", show: can("org.manage") || can("roles.manage") || can("regions.manage") },
   ];
   return { main: main.filter((i) => i.show !== false) };
 }
@@ -50,20 +50,21 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   const isActive = (href: string) => (href === path("") ? location === href || location === `${href}/` : location.startsWith(href));
 
   return (
-    <div className="flex h-full flex-col bg-navy text-white">
-      <div className="flex items-center gap-3 px-5 pb-5 pt-6">
-        {org.logoUrl ? (
-          <img src={org.logoUrl} alt="" className="size-9 rounded-lg bg-white object-contain p-1" />
-        ) : (
-          <img src="/favicon.svg" alt="" className="size-9" />
-        )}
-        <div className="min-w-0">
-          <div className="truncate text-[15px] font-semibold leading-tight">{org.name}</div>
-          <div className="text-[11px] uppercase tracking-wider text-gold">{t("Workspace")}</div>
+    <div className="brand-surface relative flex h-full flex-col overflow-hidden text-white lg:rounded-[28px] lg:shadow-[0_20px_50px_-20px_rgb(11_42_107/0.7)] lg:ring-1 lg:ring-white/10">
+      <div className="px-5 pb-4 pt-6">
+        <img src="/youth_capital_logo_light.svg" alt="Youth Capital" className="h-11 w-auto" />
+        <div className="mt-4 flex items-center gap-2.5 rounded-2xl bg-white/10 p-2 ring-1 ring-inset ring-white/15 backdrop-blur-md">
+          {org.logoUrl
+            ? <img src={org.logoUrl} alt="" className="size-8 rounded-[10px] bg-white object-contain p-0.5" />
+            : <span className="grid size-8 place-items-center rounded-[10px] bg-white/90 text-xs font-bold text-[#0a3d9e]">{org.name.slice(0, 2).toUpperCase()}</span>}
+          <div className="min-w-0">
+            <div className="truncate text-[13px] font-semibold leading-tight">{org.name}</div>
+            <div className="text-[11px] font-medium text-white/65">{t("Workspace")}</div>
+          </div>
         </div>
       </div>
 
-      <nav className="scrollbar-thin flex-1 space-y-0.5 overflow-y-auto px-3" aria-label={t("Main navigation")}>
+      <nav className="scrollbar-thin flex-1 space-y-1 overflow-y-auto px-3 pb-3" aria-label={t("Main navigation")}>
         {main.map((item) => {
           const active = isActive(item.href);
           return (
@@ -73,24 +74,22 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
               onClick={onNavigate}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                active ? "bg-white/10 text-white" : "text-white/70 hover:bg-white/5 hover:text-white",
+                "group flex items-center gap-3 rounded-2xl px-2 py-1.5 text-[14px] font-medium transition-all duration-200",
+                active ? "bg-white/20 text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.25)] ring-1 ring-inset ring-white/20" : "text-white/80 hover:bg-white/10 hover:text-white",
               )}
             >
-              {active && <span className="absolute inset-y-1.5 start-0 w-0.5 rounded-full bg-gold" />}
-              <item.icon className={cn("size-[18px] shrink-0", active ? "text-gold" : "text-white/60 group-hover:text-white/90")} />
-              {item.label}
+              <IconTile icon={item.icon} tone={item.tone} size={30} />
+              <span className={cn(active && "font-semibold")}>{item.label}</span>
             </Link>
           );
         })}
-
       </nav>
 
-      <div className="border-t border-navy-border p-3">
-        <div className="rounded-lg bg-navy-2 px-3 py-2.5">
-          <div className="text-[11px] uppercase tracking-wider text-white/45">{t("Your role")}</div>
-          <div className="truncate text-sm font-medium text-white">{me.role.name}</div>
-          {me.title && me.title !== me.role.name && <div className="truncate text-xs text-white/55">{me.title}</div>}
+      <div className="p-3">
+        <div className="rounded-2xl bg-white/10 px-3 py-2.5 ring-1 ring-inset ring-white/15 backdrop-blur-md">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-white/60">{t("Your role")}</div>
+          <div className="truncate text-sm font-semibold text-white">{me.role.name}</div>
+          {me.title && me.title !== me.role.name && <div className="truncate text-xs text-white/65">{me.title}</div>}
         </div>
       </div>
     </div>
@@ -209,7 +208,7 @@ function OrgUserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" className="flex items-center gap-2 rounded-lg border border-border bg-card py-1 pe-2 ps-1 text-sm shadow-xs hover:bg-muted">
+        <button type="button" className="flex items-center gap-2 rounded-full bg-muted py-1 pe-2.5 ps-1 text-sm transition-colors hover:bg-secondary">
           <PersonAvatar name={user?.fullName} url={user?.avatarUrl} size={28} />
           <span className="hidden max-w-36 truncate font-medium md:inline">{user?.fullName}</span>
           <ChevronsUpDown className="size-3.5 text-muted-foreground" />
@@ -294,24 +293,25 @@ export function AppShell({ children }: { children: ReactNode }) {
   const isMac = useMemo(() => /Mac|iPhone|iPad/.test(navigator.platform), []);
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 lg:block print:hidden"><SidebarBody /></aside>
+    <div className="flex min-h-screen">
+      {/* Floating glass-blue sidebar, inset from the window edge like macOS. */}
+      <aside className="sticky top-0 hidden h-screen w-[17.5rem] shrink-0 p-3 pe-0 lg:block print:hidden"><SidebarBody /></aside>
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-        <SheetContent side={dir === "rtl" ? "right" : "left"} className="w-72 border-none p-0 [&>button]:text-white">
+        <SheetContent side={dir === "rtl" ? "right" : "left"} className="w-72 border-none bg-transparent p-0 [&>button]:text-white">
           <SheetTitle className="sr-only">{t("Navigation")}</SheetTitle>
           <SidebarBody onNavigate={() => setMobileOpen(false)} />
         </SheetContent>
       </Sheet>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-16 items-center print:hidden gap-2 border-b border-border bg-background/85 px-3 backdrop-blur-md sm:px-6">
-          <button type="button" className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted lg:hidden" onClick={() => setMobileOpen(true)} aria-label={t("Open menu")}>
+        <header className="glass-bar sticky top-0 z-30 mx-3 mt-3 flex h-14 items-center gap-2 rounded-2xl border border-white/60 px-2 shadow-[0_8px_24px_-12px_rgb(30_64_175/0.25)] dark:border-white/10 sm:mx-6 sm:px-3 print:hidden">
+          <button type="button" className="grid size-9 place-items-center rounded-xl text-muted-foreground hover:bg-muted lg:hidden" onClick={() => setMobileOpen(true)} aria-label={t("Open menu")}>
             <Menu className="size-5" />
           </button>
           <button
             type="button"
             onClick={() => setPaletteOpen(true)}
-            className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-border bg-card px-3 text-sm text-muted-foreground shadow-xs hover:bg-muted sm:max-w-md"
+            className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-xl bg-muted px-3 text-sm text-muted-foreground transition-colors hover:bg-secondary sm:max-w-md"
           >
             <Search className="size-4 shrink-0" />
             <span className="truncate">{t("Search anything…")}</span>

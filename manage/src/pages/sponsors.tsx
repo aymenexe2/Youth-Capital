@@ -40,7 +40,7 @@ export default function SponsorsPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {q.data!.sponsors.map((s) => (
-            <Link key={s.id} href={path(`/sponsors/${s.id}`)} className="rounded-xl border border-border bg-card p-5 transition-colors hover:border-primary/40">
+            <Link key={s.id} href={path(`/sponsors/${s.id}`)} className="rounded-2xl border bg-card p-5 transition-colors hover:border-primary/40">
               <div className="flex items-center gap-3">
                 <SponsorLogo s={s} />
                 <div className="min-w-0 flex-1"><p className="truncate font-semibold">{s.name}</p><p className="truncate text-xs text-muted-foreground">{s.contactName ?? s.website ?? ""}</p></div>

@@ -24,13 +24,13 @@ export default function PortalPage() {
   const tz = d?.organisation.timezone;
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-navy text-white print:hidden">
-        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-4 sm:px-6">
-          {d?.organisation.logoUrl ? <img src={d.organisation.logoUrl} alt="" className="size-9 rounded-lg bg-white object-contain p-1" /> : <img src="/favicon.svg" alt="" className="size-9" />}
-          <div className="min-w-0 flex-1">
-            <p className="truncate font-semibold">{d?.organisation.name ?? ""}</p>
-            <p className="text-[11px] uppercase tracking-wider text-gold">{t("Sponsor portal")}</p>
+    <div className="min-h-screen">
+      <header className="brand-surface mx-3 mt-3 rounded-[24px] text-white shadow-[0_20px_40px_-24px_rgb(11_42_107/0.8)] print:hidden sm:mx-6">
+        <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-4 sm:px-6">
+          <img src="/youth_capital_logo_light.svg" alt="Youth Capital" className="h-10 w-auto" />
+          <div className="min-w-0 flex-1 border-s border-white/20 ps-4">
+            <p className="truncate text-[15px] font-semibold">{d?.organisation.name ?? ""}</p>
+            <p className="text-[11px] font-medium uppercase tracking-wider text-white/70">{t("Sponsor portal")}</p>
           </div>
           <div className="flex items-center gap-1 [&_button]:text-white/80 [&_button:hover]:bg-white/10 [&_button:hover]:text-white">
             <LanguageMenu /><ThemeToggle />

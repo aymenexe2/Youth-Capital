@@ -25,7 +25,7 @@ export default function OrgsPage() {
     <CenteredPage>
       <h1 className="text-2xl font-semibold tracking-tight">{t("Welcome, {name}", { name: user?.fullName?.split(" ")[0] ?? "" })}</h1>
       <p className="mt-1 text-sm text-muted-foreground">{t("Choose an organisation workspace.")}</p>
-      <div className="mt-6 overflow-hidden rounded-xl border border-border bg-card">
+      <div className="mt-6 overflow-hidden rounded-2xl border bg-card">
         {q.error ? (
           <div className="p-4"><ErrorState onRetry={() => q.refetch()} /></div>
         ) : orgs.length === 0 ? (
@@ -39,7 +39,7 @@ export default function OrgsPage() {
             <Link key={o.id} href={`/o/${o.slug}`} className="flex items-center gap-4 border-b border-border px-4 py-4 last:border-0 hover:bg-muted/60">
               {o.logoUrl
                 ? <img src={o.logoUrl} alt="" className="size-10 rounded-lg border border-border object-contain p-1" />
-                : <span className="grid size-10 place-items-center rounded-lg bg-navy text-sm font-semibold text-gold">{o.name.slice(0, 2).toUpperCase()}</span>}
+                : <span className="brand-surface grid size-10 place-items-center rounded-xl text-sm font-bold text-white">{o.name.slice(0, 2).toUpperCase()}</span>}
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium">{o.name}</span>
                 <span className="block truncate text-sm text-muted-foreground">{o.role.name}</span>

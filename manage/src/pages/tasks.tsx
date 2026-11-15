@@ -141,7 +141,7 @@ function TaskCard({ task, onOpen, draggable, onDragStart }: { task: any; onOpen:
       draggable={draggable}
       onDragStart={onDragStart}
       onClick={onOpen}
-      className="w-full rounded-lg border border-border bg-card p-3 text-start shadow-[0_1px_2px_rgb(15_23_42/0.05)] transition-colors hover:border-primary/40 focus-visible:border-primary"
+      className="w-full rounded-xl border bg-card p-3 text-start transition-transform duration-150 hover:-translate-y-0.5 focus-visible:-translate-y-0.5"
     >
       <p className="line-clamp-2 text-sm font-medium text-foreground">{task.title}</p>
       {task.projectTitle && <p className="mt-1 truncate text-xs text-muted-foreground">{task.projectTitle}</p>}
@@ -199,7 +199,7 @@ function Board({ tasks, onOpen, onCreate }: { tasks: any[]; onOpen: (id: number)
               onDragOver={(e) => { e.preventDefault(); setOver(col); }}
               onDragLeave={() => setOver((o) => (o === col ? null : o))}
               onDrop={(e) => onDrop(col, e)}
-              className={cn("flex min-h-64 flex-col rounded-xl border border-transparent bg-muted/60 p-2", over === col && "border-primary/50 bg-primary/5")}
+              className={cn("flex min-h-64 flex-col rounded-2xl border border-white/50 bg-white/30 p-2 backdrop-blur-xl dark:border-white/5 dark:bg-white/[0.03]", over === col && "border-primary/50 bg-primary/10")}
             >
               <div className="mb-2 flex items-center gap-2 px-1.5 pt-1">
                 <span className={cn("size-2 rounded-full", TONE_DOT[TASK_TONE[col]])} />

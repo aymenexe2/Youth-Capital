@@ -44,7 +44,7 @@ export default function InvitePage() {
 
   return (
     <CenteredPage>
-      <div className="rounded-xl border border-border bg-card p-6 text-center">
+      <div className="rounded-2xl border bg-card p-6 text-center">
         {q.isLoading ? (
           <Loader2 className="mx-auto size-6 animate-spin text-muted-foreground" />
         ) : !q.data ? (

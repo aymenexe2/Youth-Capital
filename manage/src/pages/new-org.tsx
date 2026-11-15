@@ -48,7 +48,7 @@ export default function NewOrgPage() {
       <Link href="/" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4 rtl:rotate-180" />{t("Back")}</Link>
       <h1 className="text-2xl font-semibold tracking-tight">{t("New organisation")}</h1>
       <p className="mt-1 text-sm text-muted-foreground">{t("You'll be its first administrator. Committees, regions and roles can be set up next.")}</p>
-      <form onSubmit={submit} className="mt-6 space-y-4 rounded-xl border border-border bg-card p-5">
+      <form onSubmit={submit} className="mt-6 space-y-4 rounded-2xl border bg-card p-5">
         <Field label={t("Name")} htmlFor="org-name" required>
           <Input id="org-name" value={name} onChange={(e) => { setName(e.target.value); if (!slugTouched) setSlug(slugify(e.target.value)); }} required minLength={2} maxLength={120} />
         </Field>

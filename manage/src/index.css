@@ -3,95 +3,118 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Workspace design tokens: deep-navy navigation, light workspace, restrained
-   blue accents and matte-gold highlights (brief §10). Runtime tokens live
-   outside @theme so the .dark class can override them. */
+/* Workspace design: glassy, Apple-inspired. A soft colourful mesh sits behind
+   frosted-glass surfaces; colour comes from Apple's system palette. Brand blue
+   carries the navigation and login, with the light Youth Capital logo on it.
+   Runtime tokens live outside @theme so the .dark class can override them. */
 :root {
-  --background: hsl(220 30% 97%);
-  --foreground: hsl(222 47% 11%);
-  --card: hsl(0 0% 100%);
+  --background: #f2f4f9;
+  --foreground: #1d1d1f;
+  /* Glass surfaces: translucent, blurred by the rules in @layer base. */
+  --card: rgb(255 255 255 / 0.62);
   --card-foreground: var(--foreground);
-  --primary: hsl(221 72% 44%);
-  --primary-foreground: hsl(0 0% 100%);
-  --secondary: hsl(220 22% 94%);
-  --secondary-foreground: hsl(222 40% 18%);
-  --muted: hsl(220 20% 95%);
-  --muted-foreground: hsl(220 12% 40%);
-  --accent: hsl(220 22% 93%);
+  --popover: rgb(255 255 255 / 0.86);
+  --popover-foreground: var(--foreground);
+  --glass-border: rgb(255 255 255 / 0.65);
+  --glass-shadow: 0 1px 1px rgb(15 23 42 / 0.04), 0 8px 24px -8px rgb(30 64 175 / 0.14);
+
+  --primary: #0a6cff;
+  --primary-foreground: #ffffff;
+  --secondary: rgb(118 118 128 / 0.12);
+  --secondary-foreground: #1d1d1f;
+  --muted: rgb(118 118 128 / 0.1);
+  --muted-foreground: #6e6e73;
+  --accent: rgb(10 108 255 / 0.08);
   --accent-foreground: var(--foreground);
-  --destructive: hsl(354 70% 46%);
-  --destructive-foreground: hsl(0 0% 100%);
-  --border: hsl(220 18% 88%);
-  --ring: hsl(221 72% 50%);
-  --gold: hsl(41 55% 42%);
-  --gold-soft: hsl(43 70% 94%);
+  --destructive: #ff3b30;
+  --destructive-foreground: #ffffff;
+  --border: rgb(60 60 67 / 0.12);
+  --ring: #0a6cff;
+  --gold: #c8962b;
+  --gold-soft: rgb(255 204 0 / 0.16);
 
-  --navy: hsl(219 56% 13%);
-  --navy-2: hsl(219 45% 18%);
-  --navy-border: hsl(219 35% 22%);
+  /* Brand navigation: deep Youth Capital blue. */
+  --navy: #0b2a6b;
+  --navy-2: rgb(255 255 255 / 0.1);
+  --navy-border: rgb(255 255 255 / 0.12);
 
-  /* Status palette — used consistently for task/project/event states. */
-  --st-neutral: hsl(220 10% 46%);
-  --st-blue: hsl(217 80% 46%);
-  --st-violet: hsl(258 60% 52%);
-  --st-amber: hsl(36 92% 40%);
-  --st-green: hsl(152 64% 32%);
-  --st-red: hsl(354 70% 46%);
+  /* Apple system colours, used for status everywhere. */
+  --st-neutral: #8e8e93;
+  --st-blue: #007aff;
+  --st-violet: #af52de;
+  --st-amber: #ff9500;
+  --st-green: #34c759;
+  --st-red: #ff3b30;
+  --st-teal: #30b0c7;
+  --st-indigo: #5856d6;
+  --st-pink: #ff2d55;
 
-  --popover: var(--card);
-  --popover-foreground: var(--card-foreground);
   --input: var(--border);
   --button-outline: var(--border);
   --badge-outline: var(--border);
   --primary-border: transparent;
-  --secondary-border: var(--border);
+  --secondary-border: transparent;
   --destructive-border: transparent;
   --elevate-1: rgb(0 0 0 / 0.04);
   --elevate-2: rgb(0 0 0 / 0.08);
 
-  --chart-1: hsl(217 80% 50%);
-  --chart-2: hsl(41 70% 50%);
-  --chart-3: hsl(152 55% 40%);
-  --chart-4: hsl(258 55% 58%);
-  --chart-5: hsl(354 65% 55%);
+  --chart-1: #007aff;
+  --chart-2: #ff9500;
+  --chart-3: #34c759;
+  --chart-4: #af52de;
+  --chart-5: #ff2d55;
+
+  --mesh:
+    radial-gradient(60rem 40rem at -10% -10%, rgb(0 122 255 / 0.20), transparent 60%),
+    radial-gradient(50rem 36rem at 110% 0%, rgb(175 82 222 / 0.16), transparent 60%),
+    radial-gradient(46rem 34rem at 100% 100%, rgb(255 45 85 / 0.10), transparent 60%),
+    radial-gradient(48rem 36rem at 0% 100%, rgb(48 176 199 / 0.16), transparent 60%);
 }
 
 .dark {
-  --background: hsl(222 42% 7%);
-  --foreground: hsl(220 25% 94%);
-  --card: hsl(222 35% 11%);
-  --secondary: hsl(222 28% 17%);
-  --secondary-foreground: hsl(220 25% 92%);
-  --muted: hsl(222 28% 15%);
-  --muted-foreground: hsl(220 14% 66%);
-  --accent: hsl(222 28% 19%);
-  --border: hsl(222 25% 20%);
-  --primary: hsl(217 85% 62%);
-  --primary-foreground: hsl(222 47% 9%);
-  --ring: hsl(217 85% 62%);
-  --destructive: hsl(354 75% 60%);
-  --gold: hsl(43 60% 58%);
-  --gold-soft: hsl(43 30% 16%);
-  --navy: hsl(222 45% 6%);
-  --navy-2: hsl(222 38% 11%);
-  --navy-border: hsl(222 30% 15%);
-  --st-neutral: hsl(220 12% 62%);
-  --st-blue: hsl(217 85% 66%);
-  --st-violet: hsl(258 75% 74%);
-  --st-amber: hsl(38 92% 60%);
-  --st-green: hsl(152 55% 52%);
-  --st-red: hsl(354 80% 66%);
-  --elevate-1: rgb(255 255 255 / 0.04);
-  --elevate-2: rgb(255 255 255 / 0.09);
-  --chart-1: hsl(217 85% 62%);
-  --chart-2: hsl(43 70% 58%);
-  --chart-3: hsl(152 55% 50%);
-  --chart-4: hsl(258 70% 72%);
-  --chart-5: hsl(354 75% 64%);
+  --background: #0b0d14;
+  --foreground: #f5f5f7;
+  --card: rgb(36 38 48 / 0.55);
+  --popover: rgb(30 32 42 / 0.9);
+  --glass-border: rgb(255 255 255 / 0.08);
+  --glass-shadow: 0 1px 1px rgb(0 0 0 / 0.3), 0 12px 32px -12px rgb(0 0 0 / 0.6);
+  --primary: #0a84ff;
+  --secondary: rgb(118 118 128 / 0.24);
+  --secondary-foreground: #f5f5f7;
+  --muted: rgb(118 118 128 / 0.18);
+  --muted-foreground: #a1a1a6;
+  --accent: rgb(10 132 255 / 0.16);
+  --destructive: #ff453a;
+  --border: rgb(255 255 255 / 0.1);
+  --ring: #0a84ff;
+  --gold: #ffd60a;
+  --gold-soft: rgb(255 214 10 / 0.12);
+  --navy: #071a45;
+  --st-neutral: #98989d;
+  --st-blue: #0a84ff;
+  --st-violet: #bf5af2;
+  --st-amber: #ff9f0a;
+  --st-green: #30d158;
+  --st-red: #ff453a;
+  --st-teal: #40c8e0;
+  --st-indigo: #5e5ce6;
+  --st-pink: #ff375f;
+  --elevate-1: rgb(255 255 255 / 0.05);
+  --elevate-2: rgb(255 255 255 / 0.1);
+  --chart-1: #0a84ff;
+  --chart-2: #ff9f0a;
+  --chart-3: #30d158;
+  --chart-4: #bf5af2;
+  --chart-5: #ff375f;
+  --mesh:
+    radial-gradient(60rem 40rem at -10% -10%, rgb(10 132 255 / 0.22), transparent 60%),
+    radial-gradient(50rem 36rem at 110% 0%, rgb(191 90 242 / 0.18), transparent 60%),
+    radial-gradient(46rem 34rem at 100% 100%, rgb(255 55 95 / 0.10), transparent 60%),
+    radial-gradient(48rem 36rem at 0% 100%, rgb(64 200 224 / 0.12), transparent 60%);
 }
 
 @theme inline {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -123,16 +146,20 @@
   --color-st-amber: var(--st-amber);
   --color-st-green: var(--st-green);
   --color-st-red: var(--st-red);
+  --color-st-teal: var(--st-teal);
+  --color-st-indigo: var(--st-indigo);
+  --color-st-pink: var(--st-pink);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
 
-  --radius-sm: 0.375rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
-  --radius-xl: 1rem;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1.125rem;
+  --radius-2xl: 1.5rem;
 }
 
 @layer base {
@@ -143,20 +170,38 @@
     -webkit-text-size-adjust: 100%;
   }
   body {
-    @apply bg-background text-foreground antialiased;
-    font-feature-settings: "cv11", "ss01";
+    @apply text-foreground antialiased;
+    background-color: var(--background);
+    background-image: var(--mesh);
+    background-attachment: fixed;
+    min-height: 100vh;
+    letter-spacing: -0.011em;
   }
   [dir="rtl"] body {
-    font-family: "Cairo", "Inter", ui-sans-serif, system-ui, sans-serif;
+    font-family: "Cairo", -apple-system, BlinkMacSystemFont, "Inter", ui-sans-serif, system-ui, sans-serif;
+    letter-spacing: 0;
+  }
+  h1, h2, h3 {
+    letter-spacing: -0.022em;
   }
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
+
+  /* Frosted glass: every card and popover surface blurs what's behind it. */
+  .bg-card,
+  .bg-popover {
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    backdrop-filter: blur(24px) saturate(180%);
+  }
+  .bg-card {
+    border-color: var(--glass-border);
+    box-shadow: var(--glass-shadow);
+  }
 }
 
 @layer utilities {
-  /* Subtle hover/press feedback used by the shared button/badge primitives. */
   .hover-elevate:not(:disabled):hover {
     background-image: linear-gradient(var(--elevate-1), var(--elevate-1));
   }
@@ -169,6 +214,28 @@
   .scrollbar-thin {
     scrollbar-width: thin;
   }
+  /* Brand-blue surface used by the sidebar, login panel and portal header. */
+  .brand-surface {
+    background:
+      radial-gradient(40rem 30rem at 0% 0%, rgb(56 132 255 / 0.55), transparent 60%),
+      radial-gradient(36rem 28rem at 100% 100%, rgb(88 86 214 / 0.45), transparent 60%),
+      linear-gradient(160deg, #0b2a6b 0%, #0a3d9e 55%, #1f56d6 100%);
+  }
+  .dark .brand-surface {
+    background:
+      radial-gradient(40rem 30rem at 0% 0%, rgb(10 132 255 / 0.35), transparent 60%),
+      radial-gradient(36rem 28rem at 100% 100%, rgb(94 92 230 / 0.3), transparent 60%),
+      linear-gradient(160deg, #061638 0%, #0a2a6e 60%, #13358f 100%);
+  }
+  /* Translucent bar (top bar, toolbars). */
+  .glass-bar {
+    background: rgb(255 255 255 / 0.55);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    backdrop-filter: blur(24px) saturate(180%);
+  }
+  .dark .glass-bar {
+    background: rgb(20 22 30 / 0.55);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -177,5 +244,16 @@
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  body {
+    background: #fff;
+  }
+  .bg-card {
+    backdrop-filter: none;
+    box-shadow: none;
+    background: #fff;
   }
 }

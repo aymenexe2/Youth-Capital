@@ -215,7 +215,7 @@ function Badges() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {list.map((a) => (
-            <div key={a.id} className={cn("flex gap-4 rounded-xl border border-border bg-card p-4", a.archivedAt && "opacity-60")}>
+            <div key={a.id} className={cn("flex gap-4 rounded-2xl border bg-card p-4", a.archivedAt && "opacity-60")}>
               <Badge badge={a} size={48} />
               <div className="min-w-0 flex-1">
                 <p className="font-semibold">{a.name}</p>
