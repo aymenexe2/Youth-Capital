@@ -935,4 +935,6 @@ export const fr: Record<string, string> = {
   "Uncategorised": "Non classé",
   "Collapse sidebar": "Réduire le menu",
   "Expand sidebar": "Déplier le menu",
+  "Show password": "Afficher le mot de passe",
+  "Hide password": "Masquer le mot de passe",
 };

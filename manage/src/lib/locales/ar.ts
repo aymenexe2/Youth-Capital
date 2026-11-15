@@ -935,4 +935,6 @@ export const ar: Record<string, string> = {
   "Uncategorised": "غير مصنف",
   "Collapse sidebar": "طي القائمة",
   "Expand sidebar": "توسيع القائمة",
+  "Show password": "إظهار كلمة المرور",
+  "Hide password": "إخفاء كلمة المرور",
 };

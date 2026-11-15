@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Redirect, useLocation, useSearch } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, ShieldCheck, FolderKanban, Users, CheckCircle2 } from "lucide-react";
+import { Eye, EyeOff, Loader2, ShieldCheck, FolderKanban, Users, CheckCircle2 } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { API_URL, SITE_URL } from "@/lib/env";
@@ -30,6 +30,7 @@ export default function LoginPage() {
   const next = safeNext(params.get("next"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const providers = useQuery({ queryKey: ["oauth-providers"], queryFn: () => api.get<{ google: boolean; linkedin: boolean }>("/api/auth/oauth/providers") });
@@ -106,7 +107,14 @@ export default function LoginPage() {
                 <Input id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
               </Field>
               <Field label={t("Password")} htmlFor="password">
-                <Input id="password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+                <div className="relative">
+                  <Input id="password" type={showPassword ? "text" : "password"} autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} className="pe-11" />
+                  <button type="button" onClick={() => setShowPassword((s) => !s)} aria-pressed={showPassword}
+                    aria-label={showPassword ? t("Hide password") : t("Show password")}
+                    className="absolute end-1.5 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                    {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
               </Field>
               {error && <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
               <Button type="submit" className="w-full" disabled={busy || !email || !password}>
