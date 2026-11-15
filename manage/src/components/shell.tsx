@@ -53,12 +53,13 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
     // Frosted glass: white in light mode with the blue logo, dark in dark mode with the white logo.
     <div className="relative flex h-full flex-col overflow-hidden border border-white/70 bg-white/60 text-foreground backdrop-blur-2xl backdrop-saturate-150 dark:border-white/10 dark:bg-[rgb(24_26_36/0.6)] lg:rounded-[28px] lg:shadow-[0_20px_50px_-24px_rgb(30_64_175/0.35)]">
       <div className="px-5 pb-4 pt-6">
-        <img src="/youth_capital_logo_dark.svg" alt="Youth Capital" className="h-11 w-auto dark:hidden" />
-        <img src="/youth_capital_logo_light.svg" alt="Youth Capital" className="hidden h-11 w-auto dark:block" />
+        <img src="/youth_capital_logo_light.svg" alt="Youth Capital" className="h-11 w-auto dark:hidden" />
+        <img src="/youth_capital_logo_dark.svg" alt="Youth Capital" className="hidden h-11 w-auto dark:block" />
         <div className="mt-4 flex items-center gap-2.5 rounded-2xl bg-muted p-2">
+          {/* Same treatment as the account avatar in the top bar: round, image cropped to fill. */}
           {org.logoUrl
-            ? <img src={org.logoUrl} alt="" className="size-8 rounded-[10px] bg-white object-contain p-0.5 ring-1 ring-black/5" />
-            : <span className="brand-surface grid size-8 place-items-center rounded-[10px] text-xs font-bold text-white">{org.name.slice(0, 2).toUpperCase()}</span>}
+            ? <img src={org.logoUrl} alt="" className="size-9 shrink-0 rounded-full bg-white object-cover ring-2 ring-card" referrerPolicy="no-referrer" />
+            : <span className="brand-surface grid size-9 shrink-0 place-items-center rounded-full text-xs font-bold text-white ring-2 ring-card">{org.name.slice(0, 2).toUpperCase()}</span>}
           <div className="min-w-0">
             <div className="truncate text-[13px] font-semibold leading-tight">{org.name}</div>
             <div className="text-[11px] font-medium text-muted-foreground">{t("Workspace")}</div>

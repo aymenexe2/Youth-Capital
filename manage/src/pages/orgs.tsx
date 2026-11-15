@@ -38,7 +38,7 @@ export default function OrgsPage() {
           orgs.map((o) => (
             <Link key={o.id} href={`/o/${o.slug}`} className="flex items-center gap-4 border-b border-border px-4 py-4 last:border-0 hover:bg-muted/60">
               {o.logoUrl
-                ? <img src={o.logoUrl} alt="" className="size-10 rounded-lg border border-border object-contain p-1" />
+                ? <img src={o.logoUrl} alt="" className="size-10 rounded-full bg-white object-cover ring-2 ring-card" referrerPolicy="no-referrer" />
                 : <span className="brand-surface grid size-10 place-items-center rounded-xl text-sm font-bold text-white">{o.name.slice(0, 2).toUpperCase()}</span>}
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium">{o.name}</span>

@@ -27,8 +27,8 @@ export default function PortalPage() {
     <div className="min-h-screen">
       <header className="glass-bar mx-3 mt-3 rounded-[24px] border border-white/70 shadow-[0_16px_40px_-24px_rgb(30_64_175/0.35)] dark:border-white/10 print:hidden sm:mx-6">
         <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-4 sm:px-6">
-          <img src="/youth_capital_logo_dark.svg" alt="Youth Capital" className="h-10 w-auto dark:hidden" />
-          <img src="/youth_capital_logo_light.svg" alt="Youth Capital" className="hidden h-10 w-auto dark:block" />
+          <img src="/youth_capital_logo_light.svg" alt="Youth Capital" className="h-10 w-auto dark:hidden" />
+          <img src="/youth_capital_logo_dark.svg" alt="Youth Capital" className="hidden h-10 w-auto dark:block" />
           <div className="min-w-0 flex-1 border-s border-border ps-4">
             <p className="truncate text-[15px] font-semibold">{d?.organisation.name ?? ""}</p>
             <p className="text-[11px] font-medium uppercase tracking-wider text-primary">{t("Sponsor portal")}</p>

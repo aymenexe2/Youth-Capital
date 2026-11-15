@@ -65,7 +65,7 @@ export default function LoginPage() {
       <aside className="brand-surface relative m-3 hidden overflow-hidden rounded-[32px] p-12 text-white shadow-[0_30px_60px_-30px_rgb(11_42_107/0.8)] lg:flex lg:flex-col">
         <div className="absolute -end-24 -top-24 size-96 rounded-full bg-[#5ac8fa]/25 blur-3xl" />
         <div className="absolute -bottom-32 -start-16 size-96 rounded-full bg-[#af52de]/30 blur-3xl" />
-        <img src="/youth_capital_logo_light.svg" alt="Youth Capital" className="relative h-14 w-auto self-start" />
+        <img src="/youth_capital_logo_dark.svg" alt="Youth Capital" className="relative h-14 w-auto self-start" />
         <div className="relative mt-auto max-w-lg">
           <span className="inline-flex rounded-full bg-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-white ring-1 ring-inset ring-white/25 backdrop-blur-md">{t("Organisation workspace")}</span>
           <h1 className="mt-4 text-[44px] font-bold leading-[1.08] tracking-tight">{t("Organise, coordinate and deliver — in one place.")}</h1>
@@ -88,8 +88,8 @@ export default function LoginPage() {
         <div className="flex justify-end gap-1 p-4"><LanguageMenu /><ThemeToggle /></div>
         <div className="flex flex-1 items-center justify-center px-6 pb-16">
           <div className="w-full max-w-sm rounded-[28px] border bg-card p-7 sm:p-8">
-            <img src="/youth_capital_logo_dark.svg" alt="Youth Capital" className="mb-8 h-10 w-auto dark:hidden lg:hidden" />
-            <img src="/youth_capital_logo_light.svg" alt="Youth Capital" className="mb-8 hidden h-10 w-auto dark:block lg:dark:hidden" />
+            <img src="/youth_capital_logo_light.svg" alt="Youth Capital" className="mb-8 h-10 w-auto dark:hidden lg:hidden" />
+            <img src="/youth_capital_logo_dark.svg" alt="Youth Capital" className="mb-8 hidden h-10 w-auto dark:block lg:dark:hidden" />
             <h2 className="text-[28px] font-bold tracking-tight">{t("Sign in")}</h2>
             <p className="mt-1 text-sm text-muted-foreground">{t("Use your Youth Capital account.")}</p>
 
