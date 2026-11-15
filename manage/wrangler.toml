@@ -1,0 +1,9 @@
+# Cloudflare deployment for the organisation-management app (manage/).
+# CHANGE "name" to the project name you create in Cloudflare
+# (Workers & Pages), or Wrangler will deploy to a different project.
+name = "youth-capital-manage"
+compatibility_date = "2026-08-24"
+
+[assets]
+directory = "./dist"
+not_found_handling = "single-page-application"
