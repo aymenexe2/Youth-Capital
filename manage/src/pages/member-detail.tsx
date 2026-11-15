@@ -116,28 +116,33 @@ function EditMembership({ open, onOpenChange, member, canChangeRole }: { open: b
   const { t } = useI18n();
   const { roles } = useRoles();
   const { regions } = useRegions();
-  const [f, setF] = useState<any>({});
+  // Start from the member's real values (not {}): the dialog renders while
+  // closed too, and an empty form would look like a pending status change.
+  const initial = () => ({ roleId: member.roleId, regionId: member.regionId, title: member.title ?? "", status: member.status, skills: (member.skills ?? []).join(", "), reason: "" });
+  const [f, setF] = useState<any>(initial);
   useEffect(() => {
-    if (open) setF({ roleId: member.roleId, regionId: member.regionId, title: member.title ?? "", status: member.status, skills: (member.skills ?? []).join(", "), reason: "" });
-  }, [open, member]);
+    if (open) setF(initial());
+  }, [open, member]); // eslint-disable-line react-hooks/exhaustive-deps
   const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
   const statusChanging = f.status !== member.status;
+  const reason = String(f.reason ?? "").trim();
   const save = useOrgMutation((body: any, base) => api.patch(`${base}/members/${member.membershipId}`, body), { success: "Membership updated", onSuccess: () => onOpenChange(false) });
 
   const submit = () => {
     const body: any = {};
     if (canChangeRole && Number(f.roleId) !== member.roleId) body.roleId = Number(f.roleId);
     if ((f.regionId ?? null) !== (member.regionId ?? null)) body.regionId = f.regionId ? Number(f.regionId) : null;
-    if ((f.title.trim() || null) !== (member.title ?? null)) body.title = f.title.trim() || null;
-    const skills = f.skills.split(",").map((s: string) => s.trim()).filter(Boolean);
+    const title = String(f.title ?? "").trim();
+    if ((title || null) !== (member.title ?? null)) body.title = title || null;
+    const skills = String(f.skills ?? "").split(",").map((s: string) => s.trim()).filter(Boolean);
     if (skills.join("|") !== (member.skills ?? []).join("|")) body.skills = skills;
-    if (statusChanging) { body.status = f.status; body.reason = f.reason.trim(); }
+    if (statusChanging) { body.status = f.status; body.reason = reason; }
     if (!Object.keys(body).length) { onOpenChange(false); return; }
     save.mutate(body);
   };
 
   return (
-    <FormDialog open={open} onOpenChange={onOpenChange} title={t("Edit membership")} submitLabel={t("Save changes")} onSubmit={submit} busy={save.isPending} disabled={statusChanging && f.reason.trim().length < 3}>
+    <FormDialog open={open} onOpenChange={onOpenChange} title={t("Edit membership")} submitLabel={t("Save changes")} onSubmit={submit} busy={save.isPending} disabled={statusChanging && reason.length < 3}>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label={t("Role")} hint={!canChangeRole ? t("Changing roles needs the roles permission.") : undefined}>
           {canChangeRole ? <OptionSelect value={f.roleId} onChange={(v) => set("roleId", v)} options={roles.map((r) => ({ value: r.id, label: r.name }))} /> : <Input value={member.roleName} disabled />}
