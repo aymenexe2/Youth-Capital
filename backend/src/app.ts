@@ -96,10 +96,14 @@ app.use((req, res, next) => {
 app.get("/robots.txt", (req, res) => {
   res.type("text/plain").send("User-agent: *\nDisallow: /\n");
 });
-// Responses differ by Origin (allowed or not), so caches must key on it —
-// including refusals, or a browser can reuse one site's response for another.
+// API responses are per-user and per-origin: never let browsers or the CDN
+// store them. Without this, a response cached on one site (with that site's
+// CORS header) gets replayed as a 304 on another, and session data like
+// /api/auth/me was marked "public". No ETags means no 304 revalidation either.
+app.set("etag", false);
 app.use((_req, res, next) => {
   res.vary("Origin");
+  res.setHeader("Cache-Control", "no-store");
   next();
 });
 app.use(
