@@ -33,7 +33,9 @@ app.set("trust proxy", 1);
 const isProd = process.env.NODE_ENV === "production";
 // 5175 is the organisation-management app (manage/).
 const DEV_ORIGINS = ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175"];
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",").map((o) => o.trim()).filter(Boolean);
+// Browsers send Origin without a trailing slash, so strip any from the config
+// ("https://example.org/" would otherwise never match).
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",").map((o) => o.trim().replace(/\/+$/, "")).filter(Boolean);
 
 if (isProd && !allowedOrigins?.length) {
   logger.warn("ALLOWED_ORIGINS is not set in production — cross-origin requests will be rejected.");
@@ -68,6 +70,12 @@ app.use((req, res, next) => {
 });
 app.get("/robots.txt", (req, res) => {
   res.type("text/plain").send("User-agent: *\nDisallow: /\n");
+});
+// Responses differ by Origin (allowed or not), so caches must key on it —
+// including refusals, or a browser can reuse one site's response for another.
+app.use((_req, res, next) => {
+  res.vary("Origin");
+  next();
 });
 app.use(
   cors({
