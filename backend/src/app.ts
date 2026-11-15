@@ -45,11 +45,22 @@ const toOrigin = (value: string) => {
     return v.replace(/\/+$/, "");
   }
 };
-const allowedOrigins = [
+// A site served at both example.org and www.example.org is one site: allowing
+// one allows the other, so visitors on the bare domain can still sign in.
+const withWwwTwin = (origin: string) => {
+  try {
+    const u = new URL(origin);
+    const twin = u.hostname.startsWith("www.") ? u.hostname.slice(4) : u.hostname.split(".").length === 2 ? `www.${u.hostname}` : null;
+    return twin ? [origin, `${u.protocol}//${twin}${u.port ? `:${u.port}` : ""}`] : [origin];
+  } catch {
+    return [origin];
+  }
+};
+const allowedOrigins = [...new Set([
   ...(process.env.ALLOWED_ORIGINS?.split(",") ?? []),
   process.env.FRONTEND_URL ?? "",
   process.env.MANAGE_URL ?? "",
-].map(toOrigin).filter((o) => o && o !== "null");
+].map(toOrigin).filter((o) => o && o !== "null").flatMap(withWwwTwin))];
 
 if (isProd && !allowedOrigins.length) {
   logger.warn("ALLOWED_ORIGINS is not set in production — cross-origin requests will be rejected.");

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useLanguage } from "@/hooks/use-language";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -8,7 +8,7 @@ import { useLogin } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Mail, Lock } from "lucide-react";
+import { ArrowRight, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { useSeo } from "@/hooks/use-seo";
 import { AuthLayout } from "@/components/auth-layout";
 import { SocialAuthButtons, oauthErrorMessage } from "@/components/social-auth";
@@ -20,6 +20,7 @@ const loginSchema = z.object({
 
 export default function Login() {
   const { t, isAr } = useLanguage();
+  const [showPassword, setShowPassword] = useState(false);
   useSeo({
     title: t("Log In | Youth Capital", "تسجيل الدخول | يوث كابيتال"),
     description: t("Log in to your Youth Capital account.", "سجّل الدخول إلى حسابك في يوث كابيتال."),
@@ -87,14 +88,22 @@ export default function Login() {
               {t("Forgot password?", "نسيت كلمة المرور؟")}
             </Link>
           </div>
-          <Input
-            type="password"
-            autoComplete="current-password"
-            icon={<Lock className="w-4 h-4" />}
-            placeholder="••••••••"
-            {...form.register("password")}
-            error={form.formState.errors.password?.message}
-          />
+          <div className="relative">
+            <Input
+              type={showPassword ? "text" : "password"}
+              autoComplete="current-password"
+              icon={<Lock className="w-4 h-4" />}
+              placeholder="••••••••"
+              {...form.register("password")}
+              error={form.formState.errors.password?.message}
+              className="pe-12"
+            />
+            <button type="button" onClick={() => setShowPassword((s) => !s)} aria-label={showPassword ? t("Hide password", "إخفاء") : t("Show password", "إظهار")}
+              aria-pressed={showPassword}
+              className="absolute end-3 top-[24px] -translate-y-1/2 p-1.5 rounded-lg text-muted-foreground hover:text-gold transition-colors">
+              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
         <Button
           type="submit"
