@@ -374,7 +374,19 @@ export default function Apply() {
                       </div>
                     </div>
                   ) : !authLoading && !user ? (
-                    <SocialAuthButtons mode="signup" divider={t("or fill in the form", "أو املأ النموذج")} />
+                    <>
+                      {oauthProvider && (
+                        // Came back from Google/LinkedIn but the session cookie didn't stick (some phone browsers block it).
+                        <div role="alert" className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-foreground">
+                          <p className="font-bold">{t("Your browser didn't keep you signed in", "لم يحتفظ متصفحك بتسجيل دخولك")}</p>
+                          <p className="mt-1 text-muted-foreground">{t(
+                            "Your account was created, but this browser blocked the sign-in. Try the button again; if it keeps happening, finish your application on a computer.",
+                            "تم إنشاء حسابك، لكن هذا المتصفح منع تسجيل الدخول. أعد المحاولة بالزر؛ وإذا تكرر ذلك، أكمل طلبك من حاسوب."
+                          )}</p>
+                        </div>
+                      )}
+                      <SocialAuthButtons mode="signup" divider={t("or fill in the form", "أو املأ النموذج")} />
+                    </>
                   ) : null}
                   
                   <div>

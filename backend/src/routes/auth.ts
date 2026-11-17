@@ -79,7 +79,11 @@ router.post("/register-and-apply", authLimiter, validateBody(RegisterAndApplySch
 
     const existing = await db.select().from(usersTable).where(eq(usersTable.email, email));
     if (existing.length > 0) {
-      res.status(409).json({ error: "Conflict", message: "Email already registered" });
+      // Started with Google/LinkedIn but never finished the form: point them back there.
+      const message = existing[0].applicationStatus === "none"
+        ? "This email already has an account from Google or LinkedIn sign-in. Use that button to sign in and finish your application."
+        : "Email already registered";
+      res.status(409).json({ error: "Conflict", message });
       return;
     }
 
