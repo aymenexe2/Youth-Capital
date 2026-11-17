@@ -56,6 +56,16 @@ const STATE_COOKIE_OPTIONS = {
 // Sign-ins started from the organisation-management app (?app=manage) return there.
 type App = "site" | "manage";
 const appUrl = (app: App) => (app === "manage" ? manageUrl() : frontendUrl());
+// Where to land after sign-in: only a same-app path (e.g. /invite/abc), never another site.
+const safeNext = (v: unknown) => {
+  if (typeof v !== "string" || v.length > 300 || !v.startsWith("/") || v.startsWith("//") || v.includes("\\")) return "";
+  return /^[\w\-./?=&%]+$/.test(v) ? v : "";
+};
+const encodeNext = (next: string) => Buffer.from(next).toString("base64url");
+const decodeNext = (v: string | undefined) => {
+  try { return safeNext(v ? Buffer.from(v, "base64url").toString() : ""); } catch { return ""; }
+};
+
 const fail = (res: Response, code: string, app: App = "site") => res.redirect(`${appUrl(app)}/login?oauth_error=${encodeURIComponent(code)}`);
 
 // Which buttons the login page should show.
@@ -72,9 +82,10 @@ router.get("/oauth/:provider", authLimiter, (req, res) => {
   }
   const lang = req.query.lang === "ar" ? "ar" : "en";
   const nonce = crypto.randomBytes(24).toString("hex");
-  // The state carries the language (so new accounts get the right default)
-  // and which app to return to.
-  const state = `${nonce}.${lang}.${app}`;
+  // The state carries the language (so new accounts get the right default),
+  // which app to return to, and the page to continue to (e.g. an invitation).
+  const next = safeNext(req.query.next);
+  const state = `${nonce}.${lang}.${app}${next ? `.${encodeNext(next)}` : ""}`;
   res.cookie(STATE_COOKIE, nonce, STATE_COOKIE_OPTIONS);
 
   const cfg = PROVIDERS[provider];
@@ -91,7 +102,8 @@ router.get("/oauth/:provider", authLimiter, (req, res) => {
 
 router.get("/oauth/:provider/callback", async (req, res) => {
   const provider = String(req.params.provider);
-  const [nonce, lang = "en", appParam] = String(req.query.state || "").split(".");
+  const [nonce, lang = "en", appParam, nextParam] = String(req.query.state || "").split(".");
+  const next = decodeNext(nextParam);
   const app: App = appParam === "manage" ? "manage" : "site";
   if (!isProvider(provider) || !isConfigured(provider)) {
     fail(res, "provider_unavailable", app);
@@ -175,7 +187,7 @@ router.get("/oauth/:provider/callback", async (req, res) => {
     const dest = user.role === "admin" ? "/admin"
       : user.applicationStatus === "none" ? `/apply?oauth=${provider}`
       : "/dashboard";
-    res.redirect(app === "manage" ? `${manageUrl()}/` : `${frontendUrl()}${dest}`);
+    res.redirect(app === "manage" ? `${manageUrl()}${next || "/"}` : `${frontendUrl()}${dest}`);
   } catch (err) {
     req.log.error({ err, provider }, "OAuth callback error");
     fail(res, "server_error", app);

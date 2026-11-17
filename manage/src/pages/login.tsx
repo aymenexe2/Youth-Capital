@@ -59,7 +59,10 @@ export default function LoginPage() {
     }
   };
 
-  const oauth = (p: "google" | "linkedin") => { window.location.href = `${API_URL}/api/auth/oauth/${p}?app=manage`; };
+  // Pass the destination through the provider round trip (e.g. back to an invitation).
+  const oauth = (p: "google" | "linkedin") => {
+    window.location.href = `${API_URL}/api/auth/oauth/${p}?${new URLSearchParams({ app: "manage", ...(next !== "/" ? { next } : {}) })}`;
+  };
 
   return (
     <div className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
