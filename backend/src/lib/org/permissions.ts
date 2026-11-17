@@ -27,6 +27,8 @@ export const PERMISSIONS = [
   "finance.create_expense",
   "finance.approve",
   "finance.export",
+  "accounting.view",
+  "accounting.manage",
   "sponsors.manage",
   "sponsor.publish_update",
 ] as const;
@@ -39,6 +41,7 @@ export const PERMISSION_GROUPS: { key: string; permissions: Permission[]; availa
   { key: "work", permissions: ["projects.view", "projects.create", "projects.manage", "events.view", "events.manage", "tasks.view", "tasks.assign", "tasks.validate", "reports.view"], available: true },
   { key: "performance", permissions: ["performance.manage", "performance.review"], available: true },
   { key: "finance", permissions: ["finance.view", "finance.create_expense", "finance.approve", "finance.export"], available: true },
+  { key: "accounting", permissions: ["accounting.view", "accounting.manage"], available: true },
   { key: "sponsors", permissions: ["sponsors.manage", "sponsor.publish_update"], available: true },
 ];
 
@@ -65,7 +68,14 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
     name: "Treasurer",
     description: "Finance module, budgets, expenses, approvals and reports.",
     scope: "organisation",
-    permissions: ["members.view", "projects.view", "events.view", "tasks.view", "reports.view", "finance.view", "finance.create_expense", "finance.approve", "finance.export"],
+    permissions: ["members.view", "projects.view", "events.view", "tasks.view", "reports.view", "finance.view", "finance.create_expense", "finance.approve", "finance.export", "accounting.view", "accounting.manage"],
+  },
+  {
+    key: "accountant",
+    name: "Accountant",
+    description: "Reviews the books: finance records, Accounting Pro and legal exports (read-only).",
+    scope: "organisation",
+    permissions: ["finance.view", "finance.export", "reports.view", "accounting.view"],
   },
   {
     key: "committee_head",

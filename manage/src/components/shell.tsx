@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useTheme } from "next-themes";
 import {
-  Activity, Bell, Building2, CalendarDays, Check, CheckSquare, ChevronsUpDown, FolderKanban, Globe, HandCoins,
+  Activity, Bell, BookOpenCheck, Building2, CalendarDays, Check, CheckSquare, ChevronsUpDown, FolderKanban, Globe, HandCoins,
   HeartHandshake, LayoutDashboard, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sun, Trophy, Users, UsersRound, type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -38,6 +38,7 @@ function useNav() {
     { href: path("/tasks"), label: t("Tasks"), icon: CheckSquare },
     { href: path("/performance"), label: t("Performance"), icon: Trophy },
     { href: path("/finance"), label: t("Finance"), icon: HandCoins },
+    { href: path("/accounting"), label: "Accounting Pro", icon: BookOpenCheck, show: can("accounting.view") },
     { href: path("/sponsors"), label: t("Sponsors"), icon: HeartHandshake, show: can("sponsors.manage") || can("sponsor.publish_update") || can("finance.view") },
     { href: path("/activity"), label: t("Activity"), icon: Activity },
     { href: path("/settings"), label: t("Settings"), icon: Settings, show: can("org.manage") || can("roles.manage") || can("regions.manage") },

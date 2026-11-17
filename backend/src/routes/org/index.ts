@@ -21,6 +21,7 @@ import tasksRouter from "./tasks.js";
 import activityRouter from "./activity.js";
 import performanceRouter from "./performance.js";
 import financeRouter from "./finance.js";
+import accountingRouter from "./accounting.js";
 import sponsorsRouter, { sponsorGuard } from "./sponsors.js";
 import filesRouter from "./files.js";
 
@@ -197,6 +198,7 @@ scoped.use(activityRouter);
 scoped.use(performanceRouter);
 scoped.use(filesRouter);
 scoped.use(financeRouter);
+scoped.use(accountingRouter);
 scoped.use(sponsorsRouter);
 router.use("/:slug", loadOrgContext, sponsorGuard, scoped);
 

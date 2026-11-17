@@ -33,6 +33,7 @@ const ProjectReportPage = lazy(() => import("@/pages/finance").then((m) => ({ de
 const SponsorsPage = lazy(() => import("@/pages/sponsors"));
 const SponsorDetailPage = lazy(() => import("@/pages/sponsors").then((m) => ({ default: m.SponsorDetailPage })));
 const PortalPage = lazy(() => import("@/pages/portal"));
+const AccountingPage = lazy(() => import("@/pages/accounting"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
 
 const queryClient = new QueryClient({
@@ -101,6 +102,7 @@ function OrgRoutes() {
             <Route path={`${base}/performance`} component={PerformancePage} />
             <Route path={`${base}/finance`} component={FinancePage} />
             <Route path={`${base}/finance/report/:projectId`}>{(params) => <ProjectReportPage params={params as { projectId: string }} />}</Route>
+            <Route path={`${base}/accounting`} component={AccountingPage} />
             <Route path={`${base}/sponsors`} component={SponsorsPage} />
             <Route path={`${base}/sponsors/:id`} component={SponsorDetailPage} />
             <Route path={`${base}/settings`} component={SettingsPage} />

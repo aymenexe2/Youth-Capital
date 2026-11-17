@@ -44,11 +44,13 @@ export const PERMISSION_LABEL: Record<string, string> = {
   "finance.create_expense": "Submit expenses",
   "finance.approve": "Approve finance",
   "finance.export": "Export finance records",
+  "accounting.view": "View Accounting Pro and download legal exports",
+  "accounting.manage": "Configure accounting, post missing entries and lock periods",
   "sponsors.manage": "Manage sponsors and portal access",
   "sponsor.publish_update": "Publish sponsor updates and share records",
 };
 export const PERMISSION_GROUP_LABEL: Record<string, string> = {
-  organisation: "Organisation", members: "Members", work: "Projects, events & tasks", performance: "Performance", finance: "Finance", sponsors: "Sponsors",
+  organisation: "Organisation", members: "Members", work: "Projects, events & tasks", performance: "Performance", finance: "Finance", accounting: "Accounting Pro", sponsors: "Sponsors",
 };
 
 // Readable sentences for audit actions.
@@ -124,6 +126,11 @@ export const AUDIT_ACTION: Record<string, string> = {
   "finance.reversal_posted": "posted a reversal",
   "finance.report_viewed": "generated a financial report",
   "finance.exported": "exported finance records",
+  "accounting.exported": "exported accounting records",
+  "accounting.period_locked": "locked an accounting period",
+  "accounting.backfilled": "posted missing journal entries",
+  "accounting.identity_updated": "updated the legal identity",
+  "accounting.mapping_updated": "updated the account mapping",
   "sponsor.created": "added a sponsor",
   "sponsor.updated": "updated a sponsor",
   "sponsor.project_linked": "linked a funded project",

@@ -440,6 +440,15 @@ describe("daily jobs", () => {
   });
 });
 
+async function attachPdf(actor: Actor, slug: string, txId: number, name = "receipt.pdf") {
+  const res = await fetch(`${base}/api/org/${slug}/files?entityType=transaction&entityId=${txId}&name=${encodeURIComponent(name)}`, {
+    method: "POST", headers: { "x-session-token": actor.token, "content-type": "application/pdf", "x-forwarded-for": `10.202.0.${n++ & 255}` },
+    body: Buffer.from("%PDF-1.4\n% supporting document\n%%EOF\n"),
+  });
+  assert.equal(res.status, 201, `attach → ${res.status}`);
+  return ((await res.json()) as any).file;
+}
+
 describe("finance", () => {
   let treasurer: Actor;
   let accountId = 0, budgetId = 0, expenseId = 0;
@@ -483,6 +492,9 @@ describe("finance", () => {
     assert.equal((await api(headA, "POST", `/${slugA}/finance/transactions/${expenseId}/approve`)).status, 403);
     assert.equal((await api(treasurer, "POST", `/${slugA}/finance/transactions/${expenseId}/pay`, { accountId })).status, 409); // not approved yet
     await ok(treasurer, "POST", `/${slugA}/finance/transactions/${expenseId}/approve`);
+    // Every accounting entry needs its supporting document.
+    assert.equal((await api(treasurer, "POST", `/${slugA}/finance/transactions/${expenseId}/pay`, { accountId })).status, 400);
+    await attachPdf(headA, slugA, expenseId, "hotel-invoice.pdf");
     const paid = await ok(treasurer, "POST", `/${slugA}/finance/transactions/${expenseId}/pay`, { accountId });
     assert.equal(paid.transaction.status, "paid");
     const after = (await ok(treasurer, "GET", `/${slugA}/finance/budgets`)).budgets.find((b: any) => b.id === budgetId);
@@ -491,7 +503,7 @@ describe("finance", () => {
   });
 
   test("nobody approves their own expense", async () => {
-    const { transaction } = await ok(treasurer, "POST", `/${slugA}/finance/expenses`, { amount: "50", date: "2026-11-03", category: "Transport", counterparty: "Taxi", description: "Taxi to venue" });
+    const { transaction } = await ok(treasurer, "POST", `/${slugA}/finance/expenses`, { amount: "50", date: "2026-11-03", category: "Transport", counterparty: "Taxi", description: "Taxi to venue", costCenter: "general" });
     assert.equal((await api(treasurer, "POST", `/${slugA}/finance/transactions/${transaction.id}/approve`)).status, 403);
   });
 
@@ -579,7 +591,9 @@ describe("sponsor portal", () => {
   });
 
   test("the portal shows only the sponsor's own funded projects and contributions", async () => {
-    await ok(adminA, "POST", `/${slugA}/finance/income`, { amount: "25000", date: "2026-11-05", counterparty: "ABC Group", description: "First instalment", fundingType: "sponsorship", status: "received", accountId: (await ok(adminA, "GET", `/${slugA}/finance/accounts`)).accounts[0].id, projectId: projectA1, sponsorId });
+    const { transaction: inc } = await ok(adminA, "POST", `/${slugA}/finance/income`, { amount: "25000", date: "2026-11-05", counterparty: "ABC Group", description: "First instalment", fundingType: "sponsorship", projectId: projectA1, sponsorId });
+    await attachPdf(adminA, slugA, inc.id, "abc-agreement.pdf");
+    await ok(adminA, "POST", `/${slugA}/finance/transactions/${inc.id}/receive`, { accountId: (await ok(adminA, "GET", `/${slugA}/finance/accounts`)).accounts[0].id });
     const portal = await ok(sponsorUser, "GET", `/${slugA}/portal`);
     assert.equal(portal.sponsor.name, "ABC Group");
     assert.deepEqual(portal.projects.map((p: any) => p.id), [projectA1]);
@@ -630,5 +644,103 @@ describe("sponsor portal", () => {
     assert.equal((await dl(otherSponsorUser)).status, 404);
     // Internal members can't use the portal endpoints.
     assert.equal((await dl(memberA)).status, 404);
+  });
+});
+
+describe("accounting pro", () => {
+  let bookkeeper: Actor;
+  let cashId = 0, expenseId = 0;
+
+  before(async () => {
+    bookkeeper = await makeUser("bookkeeper");
+    await invite(adminA, slugA, bookkeeper, "treasurer");
+    cashId = (await ok(bookkeeper, "POST", `/${slugA}/finance/accounts`, { name: "Petty cash", kind: "cash", openingBalance: "500" })).account.id;
+  });
+
+  test("members can't see the books", async () => {
+    for (const p of ["/accounting/overview", "/accounting/journal", "/accounting/balance", "/accounting/fec", "/accounting/statements"]) {
+      assert.equal((await api(memberA, "GET", `/${slugA}${p}`)).status, 403, p);
+    }
+  });
+
+  test("every movement needs a project or general administration, and a valid ICE", async () => {
+    const base = { amount: "80", date: "2026-11-10", category: "Catering", counterparty: "Traiteur Atlas", description: "Lunch for volunteers" };
+    assert.equal((await api(bookkeeper, "POST", `/${slugA}/finance/expenses`, base)).status, 400);
+    assert.equal((await api(bookkeeper, "POST", `/${slugA}/finance/expenses`, { ...base, projectId: projectA1, supplierIce: "123" })).status, 400);
+    assert.equal((await api(bookkeeper, "POST", `/${slugA}/finance/income`, { amount: "10", date: "2026-11-10", counterparty: "X", description: "Direct receipt", fundingType: "donation", costCenter: "general", status: "received" })).status, 400);
+    const { transaction } = await ok(bookkeeper, "POST", `/${slugA}/finance/expenses`, { ...base, projectId: projectA1, supplierIce: "001234567000089", supplierIf: "12345678" });
+    expenseId = transaction.id;
+    assert.equal(transaction.supplierIce, "001234567000089");
+  });
+
+  test("paying posts a balanced double entry with the right accounts and analytics", async () => {
+    await ok(adminA, "POST", `/${slugA}/finance/transactions/${expenseId}/approve`);
+    await attachPdf(bookkeeper, slugA, expenseId, "facture-traiteur.pdf");
+    await ok(bookkeeper, "POST", `/${slugA}/finance/transactions/${expenseId}/pay`, { accountId: cashId, date: "2026-11-10" });
+    const { entries } = await ok(bookkeeper, "GET", `/${slugA}/accounting/journal?year=2026`);
+    const e = entries.find((x: any) => x.transactionId === expenseId);
+    assert.ok(e, "entry posted");
+    assert.equal(e.journalCode, "CA");
+    assert.deepEqual(e.lines.map((l: any) => [l.accountCode, l.debit, l.credit]), [["6143", "80.00", "0.00"], ["5161", "0.00", "80.00"]]);
+    assert.ok(e.lines.every((l: any) => l.analytic === "Tech project"));
+    assert.equal(e.files.length, 1);
+    const opening = entries.find((x: any) => x.journalCode === "AN" && x.accountId === cashId);
+    assert.deepEqual(opening.lines.map((l: any) => [l.accountCode, l.debit, l.credit]), [["5161", "500.00", "0.00"], ["1111", "0.00", "500.00"]]);
+  });
+
+  test("entry numbers are sequential with no gaps", async () => {
+    const { entries } = await ok(bookkeeper, "GET", `/${slugA}/accounting/journal?year=2026`);
+    const nums = entries.map((x: any) => Number(x.number.split("-")[1])).sort((a: number, b: number) => a - b);
+    assert.ok(nums.length >= 4);
+    assert.deepEqual(nums, nums.map((_: number, i: number) => i + 1));
+    assert.ok(entries.every((x: any) => /^2026-\d{4}$/.test(x.number)));
+  });
+
+  test("a reversal posts a contre-passation instead of changing the entry", async () => {
+    const before = (await ok(bookkeeper, "GET", `/${slugA}/accounting/journal?year=2026`)).entries.find((x: any) => x.transactionId === expenseId);
+    await ok(bookkeeper, "POST", `/${slugA}/finance/transactions/${expenseId}/reverse`, { reason: "Paid twice by mistake" });
+    const { entries } = await ok(bookkeeper, "GET", `/${slugA}/accounting/journal?year=2026`);
+    const same = entries.find((x: any) => x.id === before.id);
+    assert.deepEqual(same.lines, before.lines);
+    const contra = entries.find((x: any) => x.reversesEntryId === before.id);
+    assert.ok(contra);
+    assert.deepEqual(contra.lines.map((l: any) => [l.accountCode, l.debit, l.credit]), [["6143", "0.00", "80.00"], ["5161", "80.00", "0.00"]]);
+    assert.equal(contra.files.length, 1); // the original's supporting document
+  });
+
+  test("the trial balance and statements balance", async () => {
+    const bal = await ok(bookkeeper, "GET", `/${slugA}/accounting/balance?year=2026`);
+    assert.equal(bal.balanced, true);
+    assert.equal(bal.totals.debit, bal.totals.credit);
+    const st = await ok(bookkeeper, "GET", `/${slugA}/accounting/statements?year=2026`);
+    assert.equal(st.bilan.totalActif, st.bilan.totalPassif);
+    assert.ok(st.cpc.produits.some((p: any) => p.code === "7161"));
+  });
+
+  test("FEC export has the agreed columns in order", async () => {
+    const fec = await ok(bookkeeper, "GET", `/${slugA}/accounting/fec?year=2026`);
+    assert.deepEqual(fec.columns, ["JournalCode", "EcritureNum", "EcritureDate", "CompteNum", "CompteLib", "PieceRef", "PieceDate", "EcritureLib", "Debit", "Credit", "Projet_Analytique"]);
+    assert.ok(fec.rows.some((r: any) => r.CompteNum === "6143" && r.Projet_Analytique === "Tech project"));
+    const txt = await (await fetch(`${base}/api/org/${slugA}/accounting/fec.txt?year=2026`, { headers: { "x-session-token": bookkeeper.token } })).text();
+    assert.equal(txt.replace(/^\uFEFF/, "").split("\r\n")[0], fec.columns.join("|"));
+    assert.match(txt, /\|2026\d{4}\|6143\|/);
+  });
+
+  test("books are isolated between organisations", async () => {
+    const { entries } = await ok(adminB, "GET", `/${slugB}/accounting/journal?year=2026`);
+    assert.ok(!entries.some((x: any) => x.transactionId === expenseId));
+    assert.equal((await api(adminB, "GET", `/${slugB}/accounting/ledger?year=2026&account=6143`)).status, 200);
+  });
+
+  test("a locked period refuses new entries", async () => {
+    const { transaction } = await ok(bookkeeper, "POST", `/${slugA}/finance/expenses`, { amount: "20", date: "2026-11-12", category: "Transport", counterparty: "Taxi", description: "Taxi", costCenter: "general" });
+    await ok(adminA, "POST", `/${slugA}/finance/transactions/${transaction.id}/approve`);
+    await attachPdf(bookkeeper, slugA, transaction.id);
+    await ok(bookkeeper, "POST", `/${slugA}/accounting/locks`, { year: 2026, month: 11 });
+    const refused = await api(bookkeeper, "POST", `/${slugA}/finance/transactions/${transaction.id}/pay`, { accountId: cashId, date: "2026-11-12" });
+    assert.equal(refused.status, 409);
+    assert.equal((await ok(bookkeeper, "GET", `/${slugA}/finance/transactions/${transaction.id}`)).transaction.status, "approved");
+    await ok(bookkeeper, "POST", `/${slugA}/finance/transactions/${transaction.id}/pay`, { accountId: cashId, date: "2026-12-01" });
+    assert.equal((await api(bookkeeper, "POST", `/${slugA}/accounting/locks`, { year: 2026, month: 11 })).status, 409);
   });
 });

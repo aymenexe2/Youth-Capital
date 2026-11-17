@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useSearch } from "wouter";
-import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, ResponsiveContainer, Sankey, Tooltip, XAxis, YAxis } from "recharts";
 import {
-  AlertTriangle, ArrowDownLeft, ArrowUpRight, Banknote, Check, Download, FileText, HandCoins, Landmark, Lock, Paperclip, Plus, Printer,
+  AlertTriangle, ArrowDownLeft, ArrowUpRight, Banknote, Check, Download, FileText, FolderKanban, HandCoins, Landmark, Lock, Paperclip, Plus, Printer,
   Receipt, RotateCcw, Undo2, Wallet, X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -159,6 +159,8 @@ function Overview({ onOpen }: { onOpen: (id: number) => void }) {
           )}
         </Section>
       </div>
+      <ProjectBreakdown />
+      <MoneyFlow />
       <div className="grid gap-6 lg:grid-cols-2">
         <Section title={t("Awaiting approval")} bodyClassName="p-0">
           {(pending.data?.transactions ?? []).length === 0 ? <EmptyState icon={Check} title={t("Nothing waiting")} className="py-8" /> : (
@@ -189,6 +191,107 @@ function Overview({ onOpen }: { onOpen: (id: number) => void }) {
         </Section>
       </div>
     </div>
+  );
+}
+
+// Where each project's money came from and went: budget, income, spend, what's left.
+function ProjectBreakdown() {
+  const { t } = useI18n();
+  const money = useMoney();
+  const q = useOrgQuery<{ projects: any[] }>("/finance/breakdown");
+  const rows = q.data?.projects ?? [];
+  return (
+    <Section title={t("Project financial breakdown")} icon={FolderKanban} bodyClassName="p-0">
+      {q.isLoading ? <div className="p-4"><LoadingRows rows={3} /></div> : rows.length === 0 ? <EmptyState icon={FolderKanban} title={t("No project money yet")} className="py-8" /> : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="px-4 py-3 text-start font-medium">{t("Project / Cost center")}</th>
+                <th className="px-4 py-3 text-end font-medium">{t("Budget")}</th>
+                <th className="px-4 py-3 text-end font-medium">{t("Income received")}</th>
+                <th className="px-4 py-3 text-end font-medium">{t("Actual spend")}</th>
+                <th className="px-4 py-3 text-end font-medium">{t("Committed")}</th>
+                <th className="px-4 py-3 text-end font-medium">{t("Budget left")}</th>
+                <th className="w-36 px-4 py-3 text-start font-medium">{t("Used")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const used = Number(r.budget) ? ((Number(r.spent) + Number(r.committed)) / Number(r.budget)) * 100 : 0;
+                return (
+                  <tr key={r.projectId ?? "general"} className="border-b border-border last:border-0">
+                    <td className="px-4 py-3 font-medium">{r.projectId ? r.title : t("General administration")}</td>
+                    <td className="px-4 py-3 text-end tabular">{money(r.budget)}</td>
+                    <td className="px-4 py-3 text-end tabular text-st-green">{money(r.income)}</td>
+                    <td className="px-4 py-3 text-end tabular">{money(r.spent)}</td>
+                    <td className="px-4 py-3 text-end tabular text-muted-foreground">{money(r.committed)}</td>
+                    <td className={cn("px-4 py-3 text-end font-semibold tabular", Number(r.remainingBudget) < 0 && "text-st-red")}>{Number(r.budget) ? money(r.remainingBudget) : "—"}</td>
+                    <td className="px-4 py-3">{Number(r.budget) ? <ProgressBar value={used} tone={used > 100 ? "red" : used > 85 ? "amber" : "blue"} /> : <span className="text-xs text-muted-foreground">{t("No budget")}</span>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Section>
+  );
+}
+
+// Sankey: funding source → bank/cash account → project → expense type.
+function MoneyFlow() {
+  const { t } = useI18n();
+  const money = useMoney();
+  const q = useOrgQuery<{ sources: any[]; spending: any[] }>(`/finance/flows?year=${new Date().getFullYear()}`);
+  const data = useMemo(() => {
+    if (!q.data) return null;
+    const nodes: { name: string; color: string }[] = [];
+    const index = new Map<string, number>();
+    const node = (key: string, name: string, color: string) => {
+      if (!index.has(key)) { index.set(key, nodes.length); nodes.push({ name, color }); }
+      return index.get(key)!;
+    };
+    const links: { source: number; target: number; value: number }[] = [];
+    const add = (a: number, b: number, v: number) => {
+      const l = links.find((x) => x.source === a && x.target === b);
+      if (l) l.value += v; else links.push({ source: a, target: b, value: v });
+    };
+    for (const r of q.data.sources) add(node(`s:${r.source}`, t(FUNDING_TYPE[r.source] ?? r.source), "#34c759"), node(`a:${r.account}`, r.account, "#007aff"), Number(r.amount));
+    for (const r of q.data.spending) {
+      const project = r.project === "Administration générale" ? t("General administration") : r.project;
+      add(node(`a:${r.account}`, r.account, "#007aff"), node(`p:${r.project}`, project, "#af52de"), Number(r.amount));
+      add(node(`p:${r.project}`, project, "#af52de"), node(`c:${r.category}`, t(r.category), "#ff9500"), Number(r.amount));
+    }
+    return links.length ? { nodes, links } : null;
+  }, [q.data, t]);
+  return (
+    <Section title={t("Money flow this year")} icon={Banknote}>
+      <p className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        {[["#34c759", t("Funding source")], ["#007aff", t("Bank / cash")], ["#af52de", t("Project")], ["#ff9500", t("Expense type")]].map(([c, l]) => (
+          <span key={l} className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full" style={{ background: c }} />{l}</span>
+        ))}
+      </p>
+      {!data ? <EmptyState icon={Banknote} title={t("No money moved yet this year")} className="py-8" /> : (
+        <div className="h-80" dir="ltr">
+          <ResponsiveContainer width="100%" height="100%">
+            <Sankey data={data} nodePadding={18} nodeWidth={10} margin={{ top: 8, right: 140, bottom: 8, left: 8 }}
+              link={{ stroke: "var(--chart-1)", strokeOpacity: 0.18 }}
+              node={(props: any) => {
+                const { x, y, width, height, payload } = props;
+                return (
+                  <g>
+                    <rect x={x} y={y} width={width} height={height} rx={3} fill={payload.color} />
+                    <text x={x + width + 6} y={y + height / 2} dy="0.35em" fontSize={12} fill="var(--foreground)">{payload.name}</text>
+                  </g>
+                );
+              }}>
+              <Tooltip formatter={(v: number) => money(v)} contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 12 }} />
+            </Sankey>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </Section>
   );
 }
 
@@ -275,6 +378,7 @@ function TransactionDetail({ id }: { id: number }) {
   const [accountId, setAccountId] = useState<string | null>(null);
   const [date, setDate] = useState(todayISO());
   const [uploading, setUploading] = useState(false);
+  const [postFile, setPostFile] = useState<File | null>(null);
   const act = useOrgMutation((v: { action: string; body?: any }, base) => api.post(`${base}/finance/transactions/${id}/${v.action}`, v.body ?? {}), {
     success: "Saved", onSuccess: () => { setMode(null); setReason(""); },
   });
@@ -382,83 +486,157 @@ function TransactionDetail({ id }: { id: number }) {
         <Field label={t("Reason")} htmlFor="tx-reason" required><Textarea id="tx-reason" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={1000} autoFocus /></Field>
       </FormDialog>
       <FormDialog open={mode === "pay" || mode === "receive"} onOpenChange={(o) => !o && setMode(null)}
-        title={mode === "pay" ? t("Record payment") : t("Confirm income received")} submitLabel={t("Post")} busy={act.isPending} disabled={!accountId}
-        description={t("Posting is final. Corrections afterwards are made with a reversal.")}
-        onSubmit={() => act.mutate({ action: mode!, body: { accountId: Number(accountId), date } })}>
+        title={mode === "pay" ? t("Record payment") : t("Confirm income received")} submitLabel={t("Post")} busy={act.isPending || uploading}
+        disabled={!accountId || (files.length === 0 && !postFile)}
+        description={t("Posting is final and creates the accounting entry. Corrections afterwards are made with a reversal.")}
+        onSubmit={async () => {
+          if (files.length === 0 && postFile) {
+            setUploading(true);
+            try { await api.upload(slug, "transaction", x.id, postFile); } catch (err) { toast.error(errorMessage(err)); setUploading(false); return; }
+            setUploading(false);
+            setPostFile(null);
+          }
+          act.mutate({ action: mode!, body: { accountId: Number(accountId), date } });
+        }}>
         <Field label={t("Account")} required><OptionSelect value={accountId} onChange={setAccountId} options={(accounts.data?.accounts ?? []).filter((a) => !a.archivedAt).map((a) => ({ value: a.id, label: a.name }))} /></Field>
         <Field label={t("Date")} htmlFor="tx-date"><Input id="tx-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+        {files.length === 0 && (
+          <Field label={mode === "pay" ? t("Invoice or receipt") : t("Agreement or bank receipt")} required hint={t("Every accounting entry needs its supporting document.")}>
+            <EvidencePicker file={postFile} onChange={setPostFile} />
+          </Field>
+        )}
       </FormDialog>
     </div>
   );
 }
 
+// Project, or general administration for running costs: every movement has an analytical home.
+function CostCenterSelect({ value, onChange, projects }: { value: string | null; onChange: (v: string | null) => void; projects: any[] }) {
+  const { t } = useI18n();
+  return (
+    <OptionSelect value={value} onChange={onChange} placeholder={t("Choose a project…")}
+      options={[{ value: "general", label: t("General administration") }, ...projects.map((p) => ({ value: p.id, label: p.title }))]} />
+  );
+}
+
+const ACCEPT_DOCS = ".pdf,.png,.jpg,.jpeg,.webp,.docx,.xlsx,.csv";
+
+function EvidencePicker({ file, onChange }: { file: File | null; onChange: (f: File | null) => void }) {
+  const { t } = useI18n();
+  return (
+    <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-border px-3 py-2.5 text-sm text-muted-foreground hover:bg-muted/50">
+      <Paperclip className="size-4 shrink-0" />
+      <span className="truncate">{file ? file.name : t("Choose a file (PDF or photo, max 4 MB)")}</span>
+      <input type="file" className="sr-only" accept={ACCEPT_DOCS} onChange={(e) => onChange(e.target.files?.[0] ?? null)} />
+    </label>
+  );
+}
+
+const validAmount = (v: string) => /^\d{1,12}([.,]\d{1,2})?$/.test(v) && Number(v.replace(",", ".")) > 0;
+
 function ExpenseDialog({ open, onOpenChange, delegated, onCreated }: { open: boolean; onOpenChange: (o: boolean) => void; delegated: any[]; onCreated: (id: number) => void }) {
   const { t } = useI18n();
-  const { can } = useOrg();
+  const { can, slug } = useOrg();
   const budgets = useOrgQuery<{ budgets: any[] }>("/finance/budgets", { enabled: open });
   const projects = useOrgQuery<{ projects: any[] }>("/projects", { enabled: open });
-  const blank = { amount: "", date: todayISO(), category: "Venue", counterparty: "", description: "", budgetId: null as string | null, projectId: null as string | null, externalReference: "" };
+  const blank = { amount: "", date: todayISO(), category: "Venue", counterparty: "", description: "", budgetId: null as string | null, costCenter: null as string | null, externalReference: "", supplierIce: "", supplierIf: "" };
   const [f, setF] = useState(blank);
-  useEffect(() => { if (open) setF({ ...blank, budgetId: !can("finance.create_expense") && delegated[0] ? String(delegated[0].id) : null }); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [file, setFile] = useState<File | null>(null);
+  useEffect(() => { if (open) { setF({ ...blank, budgetId: !can("finance.create_expense") && delegated[0] ? String(delegated[0].id) : null }); setFile(null); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   const approved = (budgets.data?.budgets ?? []).filter((b) => b.status === "approved");
-  const save = useOrgMutation((body: any, base) => api.post<{ transaction: any }>(`${base}/finance/expenses`, body), {
-    success: "Expense submitted for approval", onSuccess: (d) => { onOpenChange(false); onCreated(d.transaction.id); },
-  });
-  const valid = /^\d{1,12}([.,]\d{1,2})?$/.test(f.amount) && Number(f.amount.replace(",", ".")) > 0 && f.counterparty.trim() && f.description.trim().length >= 3 && (can("finance.create_expense") || f.budgetId);
+  const save = useOrgMutation(async (body: any, base) => {
+    const res = await api.post<{ transaction: any }>(`${base}/finance/expenses`, body);
+    if (file) await api.upload(slug, "transaction", res.transaction.id, file).catch((err) => toast.error(errorMessage(err)));
+    return res;
+  }, { success: "Expense submitted for approval", onSuccess: (d) => { onOpenChange(false); onCreated(d.transaction.id); } });
+  const iceOk = !f.supplierIce || /^\d{15}$/.test(f.supplierIce);
+  const valid = validAmount(f.amount) && f.counterparty.trim() && f.description.trim().length >= 3 && (f.budgetId || f.costCenter) && iceOk && (can("finance.create_expense") || f.budgetId);
   return (
-    <FormDialog open={open} onOpenChange={onOpenChange} title={t("Submit expense")} description={t("It goes to the treasurer for approval. Attach the invoice or receipt once you have it.")}
+    <FormDialog open={open} onOpenChange={onOpenChange} title={t("Submit expense")} description={t("It goes to the treasurer for approval. The invoice is required before payment.")}
       submitLabel={t("Submit")} busy={save.isPending} disabled={!valid} wide
-      onSubmit={() => save.mutate({ ...f, budgetId: f.budgetId ? Number(f.budgetId) : null, projectId: f.projectId ? Number(f.projectId) : null, externalReference: f.externalReference.trim() || null })}>
+      onSubmit={() => save.mutate({
+        amount: f.amount, date: f.date, category: f.category, counterparty: f.counterparty, description: f.description,
+        budgetId: f.budgetId ? Number(f.budgetId) : null,
+        projectId: !f.budgetId && f.costCenter && f.costCenter !== "general" ? Number(f.costCenter) : null,
+        costCenter: !f.budgetId && f.costCenter === "general" ? "general" : null,
+        externalReference: f.externalReference.trim() || null, supplierIce: f.supplierIce || null, supplierIf: f.supplierIf || null,
+      })}>
       <div className="grid gap-4 sm:grid-cols-3">
         <Field label={t("Amount")} htmlFor="ex-amt" required><Input id="ex-amt" inputMode="decimal" dir="ltr" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="0.00" autoFocus /></Field>
         <Field label={t("Date")} htmlFor="ex-date" required><Input id="ex-date" type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
         <Field label={t("Category")}><OptionSelect value={f.category} onChange={(v) => setF({ ...f, category: v ?? "Other" })} options={EXPENSE_CATEGORIES.map((c) => ({ value: c, label: t(c) }))} /></Field>
       </div>
-      <Field label={t("Supplier / payee")} htmlFor="ex-cp" required><Input id="ex-cp" value={f.counterparty} onChange={(e) => setF({ ...f, counterparty: e.target.value })} maxLength={200} /></Field>
-      <Field label={t("Purpose")} htmlFor="ex-desc" required><Textarea id="ex-desc" rows={2} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} maxLength={2000} /></Field>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label={t("Budget")} required={!can("finance.create_expense")}>
           <OptionSelect value={f.budgetId} onChange={(v) => setF({ ...f, budgetId: v })} allowNone={can("finance.create_expense")} noneLabel={t("No budget")}
             options={(can("finance.create_expense") ? approved : delegated).map((b) => ({ value: b.id, label: b.name }))} />
         </Field>
-        {!f.budgetId && <Field label={t("Project")}><OptionSelect value={f.projectId} onChange={(v) => setF({ ...f, projectId: v })} allowNone noneLabel={t("No project")} options={(projects.data?.projects ?? []).map((p) => ({ value: p.id, label: p.title }))} /></Field>}
+        {!f.budgetId && (
+          <Field label={t("Project / Cost center")} required>
+            <CostCenterSelect value={f.costCenter} onChange={(v) => setF({ ...f, costCenter: v })} projects={projects.data?.projects ?? []} />
+          </Field>
+        )}
+      </div>
+      <Field label={t("Supplier / payee")} htmlFor="ex-cp" required><Input id="ex-cp" value={f.counterparty} onChange={(e) => setF({ ...f, counterparty: e.target.value })} maxLength={200} /></Field>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Field label={t("Supplier ICE")} htmlFor="ex-ice" hint={iceOk ? t("15 digits — required on invoices by the tax administration") : t("ICE must be 15 digits")}>
+          <Input id="ex-ice" inputMode="numeric" dir="ltr" value={f.supplierIce} onChange={(e) => setF({ ...f, supplierIce: e.target.value.replace(/\D/g, "").slice(0, 15) })} placeholder="000000000000000" aria-invalid={!iceOk} />
+        </Field>
+        <Field label={t("Supplier IF")} htmlFor="ex-if"><Input id="ex-if" inputMode="numeric" dir="ltr" value={f.supplierIf} onChange={(e) => setF({ ...f, supplierIf: e.target.value.replace(/\D/g, "").slice(0, 15) })} /></Field>
         <Field label={t("Invoice number")} htmlFor="ex-ref"><Input id="ex-ref" value={f.externalReference} onChange={(e) => setF({ ...f, externalReference: e.target.value })} maxLength={120} /></Field>
       </div>
+      <Field label={t("Purpose")} htmlFor="ex-desc" required><Textarea id="ex-desc" rows={2} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} maxLength={2000} /></Field>
+      <Field label={t("Invoice or receipt")} hint={t("Optional now — required before the payment is recorded.")}><EvidencePicker file={file} onChange={setFile} /></Field>
     </FormDialog>
   );
 }
 
 function IncomeDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (o: boolean) => void; onCreated: (id: number) => void }) {
   const { t } = useI18n();
+  const { slug } = useOrg();
   const accounts = useOrgQuery<{ accounts: any[] }>("/finance/accounts", { enabled: open });
   const projects = useOrgQuery<{ projects: any[] }>("/projects", { enabled: open });
   const sponsors = useOrgQuery<{ sponsors: any[] }>("/sponsors", { enabled: open, retry: false });
-  const blank = { amount: "", date: todayISO(), counterparty: "", description: "", fundingType: "grant", status: "received", accountId: null as string | null, projectId: null as string | null, sponsorId: null as string | null, externalReference: "" };
+  const blank = { amount: "", date: todayISO(), counterparty: "", description: "", fundingType: "sponsorship", status: "received", accountId: null as string | null, costCenter: null as string | null, sponsorId: null as string | null, externalReference: "" };
   const [f, setF] = useState(blank);
-  useEffect(() => { if (open) setF(blank); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
-  const save = useOrgMutation((body: any, base) => api.post<{ transaction: any }>(`${base}/finance/income`, body), {
-    success: "Income recorded", onSuccess: (d) => { onOpenChange(false); onCreated(d.transaction.id); },
-  });
-  const valid = /^\d{1,12}([.,]\d{1,2})?$/.test(f.amount) && Number(f.amount.replace(",", ".")) > 0 && f.counterparty.trim() && f.description.trim().length >= 3 && (f.status === "expected" || f.accountId);
+  const [file, setFile] = useState<File | null>(null);
+  useEffect(() => { if (open) { setF(blank); setFile(null); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Received income is recorded as expected, its document attached, then confirmed —
+  // so the accounting entry always has its supporting document.
+  const save = useOrgMutation(async (body: any, base) => {
+    const res = await api.post<{ transaction: any }>(`${base}/finance/income`, { ...body, status: "expected" });
+    if (file) await api.upload(slug, "transaction", res.transaction.id, file);
+    if (f.status === "received") await api.post(`${base}/finance/transactions/${res.transaction.id}/receive`, { accountId: Number(f.accountId), date: f.date });
+    return res;
+  }, { success: "Income recorded", onSuccess: (d) => { onOpenChange(false); onCreated(d.transaction.id); } });
+  const received = f.status === "received";
+  const valid = validAmount(f.amount) && f.counterparty.trim() && f.description.trim().length >= 3 && f.costCenter && (!received || (f.accountId && file));
   return (
     <FormDialog open={open} onOpenChange={onOpenChange} title={t("Record income")} submitLabel={t("Save")} busy={save.isPending} disabled={!valid} wide
-      onSubmit={() => save.mutate({ ...f, accountId: f.accountId ? Number(f.accountId) : null, projectId: f.projectId ? Number(f.projectId) : null, sponsorId: f.sponsorId ? Number(f.sponsorId) : null, externalReference: f.externalReference.trim() || null })}>
+      onSubmit={() => save.mutate({
+        amount: f.amount, date: f.date, counterparty: f.counterparty, description: f.description, fundingType: f.fundingType,
+        projectId: f.costCenter && f.costCenter !== "general" ? Number(f.costCenter) : null, costCenter: f.costCenter === "general" ? "general" : null,
+        sponsorId: f.sponsorId ? Number(f.sponsorId) : null, externalReference: f.externalReference.trim() || null,
+      })}>
       <div className="grid gap-4 sm:grid-cols-3">
         <Field label={t("Amount")} htmlFor="in-amt" required><Input id="in-amt" inputMode="decimal" dir="ltr" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="0.00" autoFocus /></Field>
         <Field label={t("Date")} htmlFor="in-date" required><Input id="in-date" type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
         <Field label={t("Status")}><OptionSelect value={f.status} onChange={(v) => setF({ ...f, status: v ?? "received" })} options={[{ value: "received", label: t("Received") }, { value: "expected", label: t("Expected") }]} /></Field>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
+        <Field label={t("Funding source")} required><OptionSelect value={f.fundingType} onChange={(v) => setF({ ...f, fundingType: v ?? "other" })} options={Object.keys(FUNDING_TYPE).map((k) => ({ value: k, label: t(FUNDING_TYPE[k]) }))} /></Field>
+        <Field label={t("Project / Cost center")} required><CostCenterSelect value={f.costCenter} onChange={(v) => setF({ ...f, costCenter: v })} projects={projects.data?.projects ?? []} /></Field>
         <Field label={t("Payer")} htmlFor="in-cp" required><Input id="in-cp" value={f.counterparty} onChange={(e) => setF({ ...f, counterparty: e.target.value })} maxLength={200} /></Field>
-        <Field label={t("Funding type")}><OptionSelect value={f.fundingType} onChange={(v) => setF({ ...f, fundingType: v ?? "other" })} options={Object.keys(FUNDING_TYPE).map((k) => ({ value: k, label: t(FUNDING_TYPE[k]) }))} /></Field>
+        {(sponsors.data?.sponsors ?? []).length > 0 && <Field label={t("Sponsor")}><OptionSelect value={f.sponsorId} onChange={(v) => setF({ ...f, sponsorId: v })} allowNone noneLabel={t("None")} options={sponsors.data!.sponsors.map((s) => ({ value: s.id, label: s.name }))} /></Field>}
       </div>
       <Field label={t("Description")} htmlFor="in-desc" required><Textarea id="in-desc" rows={2} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} maxLength={2000} /></Field>
       <div className="grid gap-4 sm:grid-cols-2">
-        {f.status === "received" && <Field label={t("Received into")} required><OptionSelect value={f.accountId} onChange={(v) => setF({ ...f, accountId: v })} options={(accounts.data?.accounts ?? []).filter((a) => !a.archivedAt).map((a) => ({ value: a.id, label: a.name }))} /></Field>}
-        <Field label={t("Allocate to project")}><OptionSelect value={f.projectId} onChange={(v) => setF({ ...f, projectId: v })} allowNone noneLabel={t("Unrestricted funds")} options={(projects.data?.projects ?? []).map((p) => ({ value: p.id, label: p.title }))} /></Field>
-        {(sponsors.data?.sponsors ?? []).length > 0 && <Field label={t("Sponsor")}><OptionSelect value={f.sponsorId} onChange={(v) => setF({ ...f, sponsorId: v })} allowNone noneLabel={t("None")} options={sponsors.data!.sponsors.map((s) => ({ value: s.id, label: s.name }))} /></Field>}
+        {received && <Field label={t("Received into")} required><OptionSelect value={f.accountId} onChange={(v) => setF({ ...f, accountId: v })} options={(accounts.data?.accounts ?? []).filter((a) => !a.archivedAt).map((a) => ({ value: a.id, label: a.name }))} /></Field>}
         <Field label={t("Reference (agreement, transfer…)")} htmlFor="in-ref"><Input id="in-ref" value={f.externalReference} onChange={(e) => setF({ ...f, externalReference: e.target.value })} maxLength={120} /></Field>
       </div>
+      <Field label={t("Agreement or bank receipt")} required={received} hint={received ? t("Every accounting entry needs its supporting document.") : t("Optional until the money is received.")}>
+        <EvidencePicker file={file} onChange={setFile} />
+      </Field>
     </FormDialog>
   );
 }

@@ -12,6 +12,7 @@ import { recordOrgAudit, diff } from "../../lib/org/audit.js";
 import { notifyMembers } from "../../lib/org/notify.js";
 import { badRequest, conflict, forbidden, idParam, isoDate, notFound, optionalId, optionalText, validatePatch } from "./util.js";
 import { registerFileEntity } from "./files.js";
+import { AccountingError, GENERAL_ADMIN, TREASURY_BY_KIND, postOpeningBalance, postTransaction } from "../../lib/org/accounting.js";
 
 // Finance (brief §4). Restricted module: org-wide access needs finance.view;
 // a delegated budget owner sees only their budget; members see only their own
@@ -65,11 +66,13 @@ async function nextReference(orgId: number, kind: string) {
   return (offset: number) => `${prefix}${String(Number(n) + 1 + offset).padStart(4, "0")}`;
 }
 
-async function insertTx(values: Omit<typeof orgTransactionsTable.$inferInsert, "reference">) {
+type Exec = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function insertTx(values: Omit<typeof orgTransactionsTable.$inferInsert, "reference">, exec: Exec | typeof db = db) {
   const ref = await nextReference(values.orgId, values.kind);
   for (let i = 0; i < 5; i++) {
     try {
-      const [t] = await db.insert(orgTransactionsTable).values({ ...values, reference: ref(i) }).returning();
+      const [t] = await exec.insert(orgTransactionsTable).values({ ...values, reference: ref(i) }).returning();
       return t;
     } catch (err: any) {
       if ((err?.code ?? err?.cause?.code) !== "23505") throw err;
@@ -181,7 +184,18 @@ const AccountSchema = z.object({
 
 router.post("/finance/accounts", requirePerm("finance.approve"), validateBody(AccountSchema.omit({ archived: true })), async (req, res) => {
   const ctx = getOrg(req);
-  const [a] = await db.insert(orgFinanceAccountsTable).values({ ...req.body, orgId: ctx.org.id }).returning();
+  let a;
+  try {
+    a = await db.transaction(async (tx) => {
+      const [created] = await tx.insert(orgFinanceAccountsTable)
+        .values({ ...req.body, orgId: ctx.org.id, ledgerCode: TREASURY_BY_KIND[req.body.kind] ?? "5141" }).returning();
+      await postOpeningBalance(tx, created.id, ctx.userId);
+      return created;
+    });
+  } catch (err) {
+    if (sendAccountingError(res, err)) return;
+    throw err;
+  }
   await recordOrgAudit({ orgId: ctx.org.id, actorUserId: ctx.userId, action: "finance.account_created", entityType: "account", entityId: a.id, summary: a.name, after: req.body });
   res.status(201).json({ account: a });
 });
@@ -511,7 +525,29 @@ const ExpenseSchema = z.object({
   description: z.string().trim().min(3).max(2000),
   budgetId: optionalId, projectId: optionalId, committeeId: optionalId,
   externalReference: optionalText(120),
+  // "general" = general administration (no project). One of project/general is required.
+  costCenter: z.enum(["general"]).nullish().transform((v) => v ?? null),
+  // Moroccan supplier identifiers: ICE is 15 digits; IF is numeric.
+  supplierIce: z.string().trim().regex(/^\d{15}$/, "ICE must be 15 digits").nullish().or(z.literal("")).transform((v) => v || null),
+  supplierIf: z.string().trim().regex(/^\d{1,15}$/, "IF must be digits only").nullish().or(z.literal("")).transform((v) => v || null),
 });
+
+// Every movement is tied to a project or to general administration (analytical axis).
+function costCenterError(projectId: number | null | undefined, costCenter: string | null | undefined) {
+  return projectId || costCenter === "general" ? null : "Choose the project this is for, or General administration";
+}
+
+async function hasEvidence(orgId: number, transactionId: number) {
+  const [f] = await db.select({ id: orgFilesTable.id }).from(orgFilesTable)
+    .where(and(eq(orgFilesTable.orgId, orgId), eq(orgFilesTable.entityType, "transaction"), eq(orgFilesTable.entityId, transactionId))).limit(1);
+  return Boolean(f);
+}
+
+function sendAccountingError(res: Response, err: unknown) {
+  if (!(err instanceof AccountingError)) return false;
+  res.status(err.status).json({ error: err.status === 400 ? "BadRequest" : "Conflict", message: err.message });
+  return true;
+}
 
 async function validateTxLinks(ctx: OrgContext, b: { budgetId?: number | null; projectId?: number | null; committeeId?: number | null; accountId?: number | null }) {
   if (b.budgetId) {
@@ -540,9 +576,15 @@ router.post("/finance/expenses", validateBody(ExpenseSchema), async (req, res) =
   }
   // An expense charged to a budget inherits its project/committee.
   const budget = body.budgetId ? await findBudget(ctx, body.budgetId) : null;
+  const projectId = body.projectId ?? budget?.projectId ?? null;
+  const ccError = costCenterError(projectId, body.costCenter ?? (budget && !budget.projectId ? "general" : null));
+  if (ccError) {
+    badRequest(res, ccError);
+    return;
+  }
   const t = await insertTx({
     ...body, orgId: ctx.org.id, kind: "expense", direction: "out", status: "submitted", currency: body.currency ?? ctx.org.currency,
-    projectId: body.projectId ?? budget?.projectId ?? null, committeeId: body.committeeId ?? budget?.committeeId ?? null,
+    projectId, costCenter: projectId ? null : "general", committeeId: body.committeeId ?? budget?.committeeId ?? null,
     requestedByMembershipId: ctx.membership.id,
   });
   await recordOrgAudit({ orgId: ctx.org.id, actorUserId: ctx.userId, action: "finance.expense_submitted", entityType: "transaction", entityId: t.id, summary: `${t.reference} · ${t.amount} ${t.currency}`, after: body });
@@ -558,16 +600,24 @@ const IncomeSchema = z.object({
   counterparty: z.string().trim().min(1).max(200),
   description: z.string().trim().min(3).max(2000),
   fundingType: z.enum(["grant", "donation", "sponsorship", "membership_fees", "event_revenue", "public_funding", "other"]),
-  status: z.enum(["expected", "received"]).default("received"),
+  status: z.enum(["expected", "received"]).default("expected"),
   accountId: optionalId, projectId: optionalId, committeeId: optionalId, sponsorId: optionalId,
   externalReference: optionalText(120),
+  costCenter: z.enum(["general"]).nullish().transform((v) => v ?? null),
 });
 
 router.post("/finance/income", requirePerm("finance.approve"), validateBody(IncomeSchema), async (req, res) => {
   const ctx = getOrg(req);
   const body = req.body as z.infer<typeof IncomeSchema>;
-  if (body.status === "received" && !body.accountId) {
-    badRequest(res, "Choose the account the money was received into");
+  // Posting needs a supporting document, which can only be attached once the
+  // entry exists: record it as expected, attach the receipt, then confirm.
+  if (body.status === "received") {
+    badRequest(res, "Record the income as expected, attach the agreement or bank receipt, then confirm it as received");
+    return;
+  }
+  const ccError = costCenterError(body.projectId, body.costCenter);
+  if (ccError) {
+    badRequest(res, ccError);
     return;
   }
   const err = await validateTxLinks(ctx, body);
@@ -580,12 +630,11 @@ router.post("/finance/income", requirePerm("finance.approve"), validateBody(Inco
     badRequest(res, "Sponsor not found");
     return;
   }
-  const received = body.status === "received";
   const t = await insertTx({
     ...body, orgId: ctx.org.id, kind: "income", direction: "in", currency: body.currency ?? ctx.org.currency, requestedByMembershipId: ctx.membership.id,
-    ...(received ? { postedByMembershipId: ctx.membership.id, postedAt: new Date() } : {}),
+    costCenter: body.projectId ? null : "general",
   });
-  await recordOrgAudit({ orgId: ctx.org.id, actorUserId: ctx.userId, action: received ? "finance.income_received" : "finance.income_expected", entityType: "transaction", entityId: t.id, summary: `${t.reference} · ${t.amount} ${t.currency}`, after: body });
+  await recordOrgAudit({ orgId: ctx.org.id, actorUserId: ctx.userId, action: "finance.income_expected", entityType: "transaction", entityId: t.id, summary: `${t.reference} · ${t.amount} ${t.currency}`, after: body });
   res.status(201).json({ transaction: t });
 });
 
@@ -621,9 +670,21 @@ router.patch("/finance/transactions/:id", validatePatch(ExpenseSchema.omit({ cur
   res.json({ transaction: updated });
 });
 
-async function transition(res: Response, ctx: OrgContext, t: OrgTransaction, from: string, set: Partial<OrgTransaction>, action: string, extra: { reason?: string | null; after?: unknown } = {}) {
-  const [updated] = await db.update(orgTransactionsTable).set({ ...set, updatedAt: new Date() })
-    .where(and(eq(orgTransactionsTable.id, t.id), eq(orgTransactionsTable.status, from as any))).returning();
+// When `post` is set the journal entry is written in the same database
+// transaction: if accounting refuses (e.g. locked period) nothing changes.
+async function transition(res: Response, ctx: OrgContext, t: OrgTransaction, from: string, set: Partial<OrgTransaction>, action: string, extra: { reason?: string | null; after?: unknown } = {}, post = false) {
+  let updated: OrgTransaction | null;
+  try {
+    updated = await db.transaction(async (tx) => {
+      const [u] = await tx.update(orgTransactionsTable).set({ ...set, updatedAt: new Date() })
+        .where(and(eq(orgTransactionsTable.id, t.id), eq(orgTransactionsTable.status, from as any))).returning();
+      if (u && post) await postTransaction(tx, u, ctx.userId);
+      return u ?? null;
+    });
+  } catch (err) {
+    if (sendAccountingError(res, err)) return null;
+    throw err;
+  }
   if (!updated) {
     conflict(res, "This entry was already updated by someone else — reload");
     return null;
@@ -688,10 +749,14 @@ router.post("/finance/transactions/:id/pay", requirePerm("finance.approve"), val
     badRequest(res, err);
     return;
   }
+  if (!(await hasEvidence(ctx.org.id, t.id))) {
+    badRequest(res, "Attach the invoice or receipt before recording the payment — every accounting entry needs a supporting document");
+    return;
+  }
   const updated = await transition(res, ctx, t, "approved", {
     status: "paid", accountId: req.body.accountId, date: req.body.date ?? t.date, externalReference: req.body.externalReference ?? t.externalReference,
     postedByMembershipId: ctx.membership.id, postedAt: new Date(),
-  }, "finance.expense_paid", { after: { accountId: req.body.accountId } });
+  }, "finance.expense_paid", { after: { accountId: req.body.accountId } }, true);
   if (!updated) return;
   notifyMembers(ctx.org.id, ctx.org.slug, [t.requestedByMembershipId], ctx.userId, {
     type: "finance.expense", title: `Expense paid: ${t.reference}`, body: "Please attach the invoice or receipt if you haven't yet.", link: `/finance?tx=${t.id}`,
@@ -715,10 +780,14 @@ router.post("/finance/transactions/:id/receive", requirePerm("finance.approve"),
     badRequest(res, err);
     return;
   }
+  if (!(await hasEvidence(ctx.org.id, t.id))) {
+    badRequest(res, "Attach the agreement or bank receipt before confirming — every accounting entry needs a supporting document");
+    return;
+  }
   const updated = await transition(res, ctx, t, "expected", {
     status: "received", accountId: req.body.accountId, date: req.body.date ?? t.date, externalReference: req.body.externalReference ?? t.externalReference,
     postedByMembershipId: ctx.membership.id, postedAt: new Date(),
-  }, "finance.income_received", { after: { accountId: req.body.accountId } });
+  }, "finance.income_received", { after: { accountId: req.body.accountId } }, true);
   if (!updated) return;
   res.json({ transaction: updated });
 });
@@ -752,23 +821,91 @@ router.post("/finance/transactions/:id/reverse", requirePerm("finance.approve"),
     conflict(res, t.reversedById ? "This entry was already reversed" : "Only posted entries can be reversed");
     return;
   }
-  const reversal = await insertTx({
-    orgId: ctx.org.id, kind: "reversal", direction: t.direction === "in" ? "out" : "in", status: "posted", amount: t.amount, currency: t.currency,
-    date: new Date().toISOString().slice(0, 10), accountId: t.accountId, budgetId: t.budgetId, projectId: t.projectId, committeeId: t.committeeId,
-    sponsorId: t.sponsorId, category: t.category, counterparty: t.counterparty, description: `Reversal of ${t.reference}: ${req.body.reason}`,
-    reversesId: t.id, requestedByMembershipId: ctx.membership.id, postedByMembershipId: ctx.membership.id, postedAt: new Date(),
-  });
-  const [linked] = await db.update(orgTransactionsTable).set({ reversedById: reversal.id })
-    .where(and(eq(orgTransactionsTable.id, t.id), isNull(orgTransactionsTable.reversedById))).returning();
-  if (!linked) {
-    // Lost a race with another reversal: undo ours by marking it cancelled, keeping the record.
-    await db.update(orgTransactionsTable).set({ status: "cancelled", rejectionReason: "Duplicate reversal" }).where(eq(orgTransactionsTable.id, reversal.id));
-    conflict(res, "This entry was already reversed");
-    return;
+  let reversal: OrgTransaction;
+  try {
+    reversal = await db.transaction(async (tx) => {
+      const r = await insertTx({
+        orgId: ctx.org.id, kind: "reversal", direction: t.direction === "in" ? "out" : "in", status: "posted", amount: t.amount, currency: t.currency,
+        date: new Date().toISOString().slice(0, 10), accountId: t.accountId, budgetId: t.budgetId, projectId: t.projectId, committeeId: t.committeeId,
+        sponsorId: t.sponsorId, category: t.category, counterparty: t.counterparty, description: `Reversal of ${t.reference}: ${req.body.reason}`,
+        reversesId: t.id, costCenter: t.costCenter, requestedByMembershipId: ctx.membership.id, postedByMembershipId: ctx.membership.id, postedAt: new Date(),
+      }, tx);
+      const [linked] = await tx.update(orgTransactionsTable).set({ reversedById: r.id })
+        .where(and(eq(orgTransactionsTable.id, t.id), isNull(orgTransactionsTable.reversedById))).returning();
+      if (!linked) throw new AccountingError("This entry was already reversed");
+      await postTransaction(tx, r, ctx.userId);
+      return r;
+    });
+  } catch (err) {
+    if (sendAccountingError(res, err)) return;
+    throw err;
   }
   await recordOrgAudit({ orgId: ctx.org.id, actorUserId: ctx.userId, action: "finance.transaction_reversed", entityType: "transaction", entityId: t.id, summary: `${t.reference} → ${reversal.reference}`, reason: req.body.reason, after: { reversalId: reversal.id } });
   await recordOrgAudit({ orgId: ctx.org.id, actorUserId: ctx.userId, action: "finance.reversal_posted", entityType: "transaction", entityId: reversal.id, summary: reversal.reference, reason: req.body.reason });
   res.status(201).json({ reversal });
+});
+
+// ── Project breakdown & money flows ─────────────────────────────────────────
+
+// For each project (and general administration): approved budget, income
+// received, actual spend (net of reversals), commitments and what's left.
+router.get("/finance/breakdown", requirePerm("finance.view"), async (req, res) => {
+  const ctx = getOrg(req);
+  const o = ctx.org.id;
+  const rows = (await db.execute(sql`
+    with money as (
+      select project_id,
+        sum(case when kind = 'income' and status = 'received' then amount
+                 when kind = 'reversal' and direction = 'out' and exists (select 1 from org_transactions x where x.id = t.reverses_id and x.kind = 'income') then -amount else 0 end) as income,
+        sum(case when kind = 'expense' and status in ('paid','posted') then amount
+                 when kind = 'reversal' and direction = 'in' and exists (select 1 from org_transactions x where x.id = t.reverses_id and x.kind = 'expense') then -amount else 0 end) as spent,
+        sum(case when kind = 'expense' and status in ('submitted','approved') then amount else 0 end) as committed
+      from org_transactions t where org_id = ${o} group by project_id
+    ), budgets as (
+      select project_id, sum(approved_amount) as budget from org_budgets where org_id = ${o} and status = 'approved' group by project_id
+    )
+    select p.id as "projectId", p.title, p.status,
+      coalesce(b.budget, 0)::numeric(14,2)::text as budget, coalesce(m.income, 0)::numeric(14,2)::text as income,
+      coalesce(m.spent, 0)::numeric(14,2)::text as spent, coalesce(m.committed, 0)::numeric(14,2)::text as committed
+    from org_projects p
+    left join money m on m.project_id = p.id
+    left join budgets b on b.project_id = p.id
+    where p.org_id = ${o} and (m.project_id is not null or b.project_id is not null)
+    union all
+    select null, ${GENERAL_ADMIN}, null,
+      coalesce((select budget from budgets where project_id is null), 0)::numeric(14,2)::text,
+      coalesce((select income from money where project_id is null), 0)::numeric(14,2)::text,
+      coalesce((select spent from money where project_id is null), 0)::numeric(14,2)::text,
+      coalesce((select committed from money where project_id is null), 0)::numeric(14,2)::text
+    order by 1 nulls last`)).rows as any[];
+  res.json({
+    currency: ctx.org.currency,
+    projects: rows.map((r) => ({
+      ...r,
+      remainingBudget: (Number(r.budget) - Number(r.spent) - Number(r.committed)).toFixed(2),
+      netCash: (Number(r.income) - Number(r.spent)).toFixed(2),
+    })),
+  });
+});
+
+// Money flow for the year: funding source → bank/cash account → project → expense type.
+router.get("/finance/flows", requirePerm("finance.view"), async (req, res) => {
+  const ctx = getOrg(req);
+  const year = Number(req.query.year) || new Date().getFullYear();
+  const o = ctx.org.id;
+  const [sources, spending] = await Promise.all([
+    db.execute(sql`
+      select coalesce(t.funding_type, 'other') as source, a.name as account, sum(t.amount)::numeric(14,2)::text as amount
+      from org_transactions t join org_finance_accounts a on a.id = t.account_id
+      where t.org_id = ${o} and t.kind = 'income' and t.status = 'received' and t.reversed_by_id is null and extract(year from t.date) = ${year}
+      group by 1, 2`),
+    db.execute(sql`
+      select a.name as account, coalesce(p.title, ${GENERAL_ADMIN}) as project, coalesce(t.category, 'Other') as category, sum(t.amount)::numeric(14,2)::text as amount
+      from org_transactions t join org_finance_accounts a on a.id = t.account_id left join org_projects p on p.id = t.project_id
+      where t.org_id = ${o} and t.kind = 'expense' and t.status in ('paid','posted') and t.reversed_by_id is null and extract(year from t.date) = ${year}
+      group by 1, 2, 3`),
+  ]);
+  res.json({ year, currency: ctx.org.currency, sources: sources.rows, spending: spending.rows });
 });
 
 // ── Reports & exports ───────────────────────────────────────────────────────

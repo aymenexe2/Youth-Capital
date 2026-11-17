@@ -38,6 +38,12 @@ export const organisationsTable = pgTable("organisations", {
   timezone: text("timezone").notNull().default("Africa/Casablanca"),
   country: text("country").notNull().default("MA"),
   status: orgStatusEnum("status").notNull().default("active"),
+  // Legal identity for accounting documents (Morocco: ICE, IF, RC).
+  legalName: text("legal_name"),
+  ice: text("ice"),
+  taxId: text("tax_id"),
+  registryNumber: text("registry_number"),
+  address: text("address"),
   createdById: integer("created_by_id").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: ts("created_at").notNull().defaultNow(),
   updatedAt: ts("updated_at").notNull().defaultNow(),
@@ -396,6 +402,7 @@ export const orgFinanceAccountsTable = pgTable("org_finance_accounts", {
   institution: text("institution"),
   openingBalance: money("opening_balance").notNull().default("0"),
   reconciledThrough: date("reconciled_through"),
+  ledgerCode: text("ledger_code"),
   archivedAt: ts("archived_at"),
   createdAt: ts("created_at").notNull().defaultNow(),
 }, (t) => [index("org_finance_accounts_org_idx").on(t.orgId)]);
@@ -463,6 +470,11 @@ export const orgTransactionsTable = pgTable("org_transactions", {
   description: text("description").notNull(),
   fundingType: text("funding_type"),
   externalReference: text("external_reference"),
+  // "general" for general administration when there's no project (analytical axis).
+  costCenter: text("cost_center"),
+  // Supplier identifiers required on Moroccan invoices.
+  supplierIce: text("supplier_ice"),
+  supplierIf: text("supplier_if"),
   requestedByMembershipId: integer("requested_by_membership_id").references(() => orgMembershipsTable.id, { onDelete: "set null" }),
   approvedByMembershipId: integer("approved_by_membership_id").references(() => orgMembershipsTable.id, { onDelete: "set null" }),
   approvedAt: ts("approved_at"),
@@ -536,6 +548,88 @@ export const orgSponsorSharesTable = pgTable("org_sponsor_shares", {
   createdAt: ts("created_at").notNull().defaultNow(),
 }, (t) => [uniqueIndex("org_sponsor_shares_unique_idx").on(t.sponsorId, t.entityType, t.entityId)]);
 
+// ── Accounting Pro (double entry) ─────────────────────────────────────────
+// Generated automatically from posted Finance transactions. Entries are never
+// edited or deleted: corrections are reversal entries. Numbers are gapless
+// per organisation and fiscal year (2026-0001, 2026-0002, …).
+
+// Chart of accounts (Plan comptable). Seeded with defaults; editable labels.
+export const orgLedgerAccountsTable = pgTable("org_ledger_accounts", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().references(() => organisationsTable.id, { onDelete: "cascade" }),
+  code: text("code").notNull(),
+  label: text("label").notNull(),
+  createdAt: ts("created_at").notNull().defaultNow(),
+}, (t) => [uniqueIndex("org_ledger_accounts_org_code_idx").on(t.orgId, t.code)]);
+
+// Which ledger account an expense category or funding type posts to.
+export const orgAccountMappingsTable = pgTable("org_account_mappings", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().references(() => organisationsTable.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(), // "expense_category" | "funding_type"
+  key: text("key").notNull(),
+  accountCode: text("account_code").notNull(),
+}, (t) => [uniqueIndex("org_account_mappings_unique_idx").on(t.orgId, t.kind, t.key)]);
+
+export const orgJournalEntriesTable = pgTable("org_journal_entries", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().references(() => organisationsTable.id, { onDelete: "cascade" }),
+  fiscalYear: integer("fiscal_year").notNull(),
+  number: text("number").notNull(), // EcritureNum, e.g. 2026-0001
+  journalCode: text("journal_code").notNull(), // BQ (bank), CA (cash), OD (misc), AN (opening)
+  date: date("date").notNull(),
+  label: text("label").notNull(),
+  transactionId: integer("transaction_id").references(() => orgTransactionsTable.id),
+  accountId: integer("account_id").references(() => orgFinanceAccountsTable.id),
+  pieceRef: text("piece_ref"),
+  pieceDate: date("piece_date"),
+  reversesEntryId: integer("reverses_entry_id"),
+  postedByUserId: integer("posted_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  createdAt: ts("created_at").notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("org_journal_entries_number_idx").on(t.orgId, t.number),
+  // One automatic entry per Finance transaction.
+  uniqueIndex("org_journal_entries_tx_idx").on(t.transactionId).where(sql`transaction_id is not null`),
+  uniqueIndex("org_journal_entries_opening_idx").on(t.accountId).where(sql`journal_code = 'AN'`),
+  index("org_journal_entries_org_date_idx").on(t.orgId, t.date),
+]);
+
+export const orgJournalLinesTable = pgTable("org_journal_lines", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().references(() => organisationsTable.id, { onDelete: "cascade" }),
+  entryId: integer("entry_id").notNull().references(() => orgJournalEntriesTable.id),
+  lineNo: integer("line_no").notNull(),
+  accountCode: text("account_code").notNull(),
+  accountLabel: text("account_label").notNull(),
+  label: text("label").notNull(),
+  debit: money("debit").notNull().default("0"),
+  credit: money("credit").notNull().default("0"),
+  projectId: integer("project_id").references(() => orgProjectsTable.id, { onDelete: "set null" }),
+  analytic: text("analytic"), // project title or "Administration générale"
+}, (t) => [
+  index("org_journal_lines_entry_idx").on(t.entryId),
+  index("org_journal_lines_org_account_idx").on(t.orgId, t.accountCode),
+]);
+
+// Gapless numbering: one counter row per organisation and fiscal year,
+// incremented inside the posting transaction (a rollback releases the number).
+export const orgJournalSequencesTable = pgTable("org_journal_sequences", {
+  orgId: integer("org_id").notNull().references(() => organisationsTable.id, { onDelete: "cascade" }),
+  fiscalYear: integer("fiscal_year").notNull(),
+  last: integer("last").notNull().default(0),
+}, (t) => [uniqueIndex("org_journal_sequences_pk_idx").on(t.orgId, t.fiscalYear)]);
+
+// Locked periods: month 1–12, or 0 for the whole fiscal year (closing).
+export const orgAccountingLocksTable = pgTable("org_accounting_locks", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().references(() => organisationsTable.id, { onDelete: "cascade" }),
+  fiscalYear: integer("fiscal_year").notNull(),
+  month: integer("month").notNull(),
+  lockedByUserId: integer("locked_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  createdAt: ts("created_at").notNull().defaultNow(),
+}, (t) => [uniqueIndex("org_accounting_locks_unique_idx").on(t.orgId, t.fiscalYear, t.month)]);
+
+export type OrgJournalEntry = typeof orgJournalEntriesTable.$inferSelect;
 export type OrgSponsor = typeof orgSponsorsTable.$inferSelect;
 export type OrgTransaction = typeof orgTransactionsTable.$inferSelect;
 export type OrgBudget = typeof orgBudgetsTable.$inferSelect;
