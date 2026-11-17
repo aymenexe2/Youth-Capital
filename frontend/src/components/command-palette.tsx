@@ -38,7 +38,7 @@ export function CommandPalette() {
   const { isAuthenticated, isAdmin } = useAuth();
   // Only fetch searchable content once the palette has been opened
   const { data: pollsData } = useGetPolls({ query: { enabled: open } } as any);
-  const { data: articlesData } = useGetArticles({ query: { enabled: open } } as any);
+  const { data: articlesData } = useGetArticles(undefined, { query: { enabled: open } } as any);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
