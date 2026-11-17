@@ -761,3 +761,30 @@ describe("admin user deletion", () => {
     assert.equal(left.length, 0);
   });
 });
+
+describe("removing a member from an organisation", () => {
+  test("only org-wide editors can remove, never themselves or the last admin, and the person can be re-invited", async () => {
+    const leaver = await makeUser("leaver");
+    const plain = await makeUser("plainmember");
+    const leaverId = await invite(adminA, slugA, leaver, "member");
+    await invite(adminA, slugA, plain, "member");
+    const { me: adminMe } = await ok(adminA, "GET", `/${slugA}`);
+
+    // The member page tells the UI who may delete.
+    assert.equal((await ok(adminA, "GET", `/${slugA}/members/${leaverId}`)).canDelete, true);
+    assert.equal((await ok(adminA, "GET", `/${slugA}/members/${adminMe.membershipId}`)).canDelete, false);
+
+    // A plain member can't; another tenant's admin can't even see them; nobody removes themselves.
+    assert.equal((await api(plain, "DELETE", `/${slugA}/members/${leaverId}`)).status, 403);
+    assert.equal((await api(adminB, "DELETE", `/${slugA}/members/${leaverId}`)).status, 404);
+    assert.equal((await api(adminA, "DELETE", `/${slugA}/members/${adminMe.membershipId}`)).status, 403);
+
+    await ok(adminA, "DELETE", `/${slugA}/members/${leaverId}`, { reason: "Left the association" });
+    assert.equal((await api(leaver, "GET", `/${slugA}`)).status, 404);
+    assert.equal((await api(adminA, "GET", `/${slugA}/members/${leaverId}`)).status, 404);
+
+    // They can come back through a fresh invitation.
+    const again = await invite(adminA, slugA, leaver, "member");
+    assert.ok(again > 0 && again !== leaverId);
+  });
+});

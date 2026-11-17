@@ -106,8 +106,13 @@ router.get("/members/:id", async (req, res) => {
     member: { ...member, committees, projects, taskStats: Object.fromEntries(taskStats.map((t) => [t.status, Number(t.n)])) },
     canEdit: canEditMember(ctx, { id: member.membershipId, regionId: member.regionId }),
     canChangeRole: can(ctx, "roles.manage"),
+    canDelete: canDeleteMember(ctx, member.membershipId),
   });
 });
+
+// Permanent removal is for organisation-wide editors only, and never yourself.
+const canDeleteMember = (ctx: OrgContext, membershipId: number) =>
+  can(ctx, "members.edit") && isOrgWide(ctx) && membershipId !== ctx.membership.id;
 
 const UpdateMemberSchema = z.object({
   roleId: z.coerce.number().int().positive().optional(),
@@ -183,6 +188,42 @@ router.patch("/members/:id", validatePatch(UpdateMemberSchema), async (req, res)
     entityType: "membership", entityId: m.id, reason: reason || null, ...changes,
   });
   res.json({ membership: updated });
+});
+
+// Remove someone from the organisation entirely. Their committee/project seats
+// and points go with them; tasks, transactions and documents they touched stay,
+// just without their name attached. They can be invited again later.
+router.delete("/members/:id", async (req, res) => {
+  const ctx = getOrg(req);
+  const id = idParam(req);
+  const [target] = id ? await db.select({ m: orgMembershipsTable, roleKey: orgRolesTable.key, fullName: usersTable.fullName, email: usersTable.email })
+    .from(orgMembershipsTable)
+    .innerJoin(orgRolesTable, eq(orgRolesTable.id, orgMembershipsTable.roleId))
+    .innerJoin(usersTable, eq(usersTable.id, orgMembershipsTable.userId))
+    .where(and(eq(orgMembershipsTable.id, id), eq(orgMembershipsTable.orgId, ctx.org.id))) : [];
+  if (!target) {
+    notFound(res, "Member");
+    return;
+  }
+  if (target.m.id === ctx.membership.id) {
+    forbidden(res, "You can't remove yourself");
+    return;
+  }
+  if (!canDeleteMember(ctx, target.m.id)) {
+    forbidden(res);
+    return;
+  }
+  if (target.roleKey === ADMIN_ROLE_KEY && target.m.status === "active" && (await activeAdminCount(ctx.org.id)) <= 1) {
+    conflict(res, "This is the only active administrator — appoint another first");
+    return;
+  }
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 1000) : "";
+  await db.delete(orgMembershipsTable).where(and(eq(orgMembershipsTable.id, target.m.id), eq(orgMembershipsTable.orgId, ctx.org.id)));
+  await recordOrgAudit({
+    orgId: ctx.org.id, actorUserId: ctx.userId, action: "membership.deleted", entityType: "membership", entityId: target.m.id,
+    summary: `${target.fullName} <${target.email}>`, reason: reason || null,
+  });
+  res.json({ success: true });
 });
 
 // ── Invitations ─────────────────────────────────────────────────────────────

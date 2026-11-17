@@ -11,7 +11,7 @@ export const api = {
   get: <T = any>(path: string) => customFetch<T>(path),
   post: <T = any>(path: string, body: unknown = {}) => customFetch<T>(path, json("POST", body)),
   patch: <T = any>(path: string, body: unknown) => customFetch<T>(path, json("PATCH", body)),
-  del: <T = any>(path: string) => customFetch<T>(path, { method: "DELETE" }),
+  del: <T = any>(path: string, body?: unknown) => customFetch<T>(path, body === undefined ? { method: "DELETE" } : json("DELETE", body)),
   // Raw upload to private storage; the server checks type, size and access.
   upload: <T = any>(slug: string, entityType: string, entityId: number, file: File, note?: string) =>
     customFetch<T>(`/api/org/${slug}/files?${new URLSearchParams({ entityType, entityId: String(entityId), name: file.name, ...(note ? { note } : {}) })}`, {

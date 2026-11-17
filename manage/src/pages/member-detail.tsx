@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "wouter";
-import { ArrowLeft, Mail, Pencil, Phone } from "lucide-react";
+import { Link, useLocation, useParams } from "wouter";
+import { ArrowLeft, Loader2, Mail, Pencil, Phone, Trash2 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { api } from "@/lib/api";
 import { formatDate, relativeTime } from "@/lib/format";
@@ -14,6 +14,9 @@ import { EmptyState, ErrorState, Field, KeyValue, PersonAvatar, Pill, Section, S
 import { OptionSelect } from "@/components/pickers";
 import { FormDialog } from "@/components/forms";
 import { Badge } from "./performance";
+import {
+  AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function MemberDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -24,10 +27,11 @@ export default function MemberDetailPage() {
   // Points are only visible to the member and to people who manage or review them (404 otherwise).
   const perf = useOrgQuery<any>(`/performance/members/${id}`, { retry: false });
   const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   if (q.isLoading) return <div className="space-y-4"><Skeleton className="h-24 w-full rounded-xl" /><Skeleton className="h-48 w-full rounded-xl" /></div>;
   if (q.error || !q.data) return <ErrorState message={t("This member's profile isn't available to you.")} />;
-  const { member: m, canEdit, canChangeRole } = q.data;
+  const { member: m, canEdit, canChangeRole, canDelete } = q.data;
   const totalTasks = Object.values(m.taskStats as Record<string, number>).reduce((a, n) => a + n, 0);
 
   return (
@@ -44,7 +48,12 @@ export default function MemberDetailPage() {
               {m.phone && <a href={`tel:${m.phone}`} className="inline-flex items-center gap-1.5 text-primary hover:underline" dir="ltr"><Phone className="size-3.5" />{m.phone}</a>}
             </div>
           </div>
-          {canEdit && <Button variant="outline" onClick={() => setEditing(true)}><Pencil />{t("Edit membership")}</Button>}
+          {(canEdit || canDelete) && (
+            <div className="flex flex-wrap gap-2">
+              {canEdit && <Button variant="outline" onClick={() => setEditing(true)}><Pencil />{t("Edit membership")}</Button>}
+              {canDelete && <Button variant="outline" className="text-destructive" onClick={() => setDeleting(true)}><Trash2 />{t("Remove member")}</Button>}
+            </div>
+          )}
         </div>
       </Section>
 
@@ -108,6 +117,7 @@ export default function MemberDetailPage() {
         </Section>
       </div>
       {canEdit && <EditMembership open={editing} onOpenChange={setEditing} member={m} canChangeRole={canChangeRole} />}
+      {canDelete && <DeleteMember open={deleting} onOpenChange={setDeleting} member={m} />}
     </>
   );
 }
@@ -158,5 +168,37 @@ function EditMembership({ open, onOpenChange, member, canChangeRole }: { open: b
         </Field>
       )}
     </FormDialog>
+  );
+}
+
+function DeleteMember({ open, onOpenChange, member }: { open: boolean; onOpenChange: (o: boolean) => void; member: any }) {
+  const { t } = useI18n();
+  const { path } = useOrg();
+  const [, navigate] = useLocation();
+  const [reason, setReason] = useState("");
+  const remove = useOrgMutation((body: { reason: string }, base) => api.del(`${base}/members/${member.membershipId}`, body), {
+    success: "Member removed",
+    onSuccess: () => { onOpenChange(false); navigate(path("/members")); },
+  });
+  return (
+    <AlertDialog open={open} onOpenChange={(o) => { if (!remove.isPending) onOpenChange(o); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t("Remove {name} from the organisation?").replace("{name}", member.fullName)}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {t("They lose access immediately and leave their committees and projects. Their points are deleted. Tasks, transactions and documents they worked on are kept. You can invite them again later. This can't be undone.")}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <Field label={t("Reason (optional)")} htmlFor="remove-reason">
+          <Textarea id="remove-reason" rows={2} maxLength={1000} value={reason} onChange={(e) => setReason(e.target.value)} />
+        </Field>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={remove.isPending}>{t("Cancel")}</AlertDialogCancel>
+          <Button variant="destructive" disabled={remove.isPending} onClick={() => remove.mutate({ reason })}>
+            {remove.isPending ? <Loader2 className="animate-spin" /> : <Trash2 />}{t("Remove member")}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
