@@ -18,6 +18,7 @@ if (!/test/i.test(new URL(url || "postgres://x/none").pathname)) {
 
 const { default: app } = await import("../src/app.js");
 const { db, pool, usersTable } = await import("@workspace/db");
+const { eq } = await import("drizzle-orm");
 const { createSession } = await import("../src/lib/session.js");
 const { hashPassword } = await import("../src/lib/password.js");
 
@@ -742,5 +743,21 @@ describe("accounting pro", () => {
     assert.equal((await ok(bookkeeper, "GET", `/${slugA}/finance/transactions/${transaction.id}`)).transaction.status, "approved");
     await ok(bookkeeper, "POST", `/${slugA}/finance/transactions/${transaction.id}/pay`, { accountId: cashId, date: "2026-12-01" });
     assert.equal((await api(bookkeeper, "POST", `/${slugA}/accounting/locks`, { year: 2026, month: 11 })).status, 409);
+  });
+});
+
+describe("admin user deletion", () => {
+  test("an unfinished Google sign-up (with its own audit entry) can be deleted", async () => {
+    const { auditLogsTable } = await import("@workspace/db");
+    const admin = await makeUser("deleter", { platformAdmin: true });
+    const victim = await makeUser("halfsignup");
+    await db.insert(auditLogsTable).values({ actorId: victim.id, action: "auth.oauth_signup", targetType: "user", targetId: victim.id });
+    const res = await fetch(`${base}/api/users/${victim.id}`, {
+      method: "DELETE",
+      headers: { "x-session-token": admin.token, "x-forwarded-for": "10.200.0.1" },
+    });
+    assert.equal(res.status, 200, JSON.stringify(await res.clone().json().catch(() => ({}))));
+    const left = await db.select().from(usersTable).where(eq(usersTable.id, victim.id));
+    assert.equal(left.length, 0);
   });
 });
