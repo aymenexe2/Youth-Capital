@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, usersTable, roleApplicationsTable } from "@workspace/db";
+import { db, usersTable, roleApplicationsTable, auditLogsTable } from "@workspace/db";
 import { eq, sql, desc, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireAdmin, safeUser } from "../lib/session.js";
@@ -208,7 +208,13 @@ router.delete("/:id", requireAuth, requireAdmin, async (req, res) => {
       res.status(403).json({ error: "Forbidden", message: "Cannot delete your own account" });
       return;
     }
-    const [deleted] = await db.delete(usersTable).where(eq(usersTable.id, targetId)).returning();
+    // Their own audit entries (sign-up, logins…) reference them and don't cascade:
+    // keep the history but detach it, then remove the account, all or nothing.
+    const deleted = await db.transaction(async (tx) => {
+      await tx.update(auditLogsTable).set({ actorId: null }).where(eq(auditLogsTable.actorId, targetId));
+      const [row] = await tx.delete(usersTable).where(eq(usersTable.id, targetId)).returning();
+      return row;
+    });
     if (!deleted) {
       res.status(404).json({ error: "NotFound", message: "User not found" });
       return;
@@ -218,7 +224,8 @@ router.delete("/:id", requireAuth, requireAdmin, async (req, res) => {
   } catch (err: any) {
     // FK violation: user authored polls/articles/crises, which don't cascade-delete
     // (that content should persist independently of the author's account).
-    if (err?.code === "23503") {
+    // Drizzle wraps driver errors; the Postgres code may be on the cause.
+    if ((err?.code ?? err?.cause?.code) === "23503") {
       res.status(409).json({
         error: "Conflict",
         message: "This user has created content (polls, articles, or crises) and cannot be deleted. Ban the account instead.",
