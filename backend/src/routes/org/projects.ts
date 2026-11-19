@@ -1,15 +1,15 @@
 import { Router, type IRouter } from "express";
 import {
   db, orgProjectsTable, orgProjectMembersTable, orgMilestonesTable, orgTasksTable, orgCommitteesTable,
-  orgMembershipsTable, usersTable, type OrgProject,
+  orgMembershipsTable, usersTable, orgBudgetsTable, orgTransactionsTable, orgJournalLinesTable, orgSponsorProjectsTable, type OrgProject,
 } from "@workspace/db";
 import { and, eq, inArray, sql, count, desc } from "drizzle-orm";
 import { z } from "zod";
 import { validateBody } from "../../middlewares/validate.js";
-import { getOrg, projectVisibility, canManageProject, canCreateProject, type OrgContext } from "../../lib/org/context.js";
+import { getOrg, projectVisibility, canManageProject, canCreateProject, isOrgWide, type OrgContext } from "../../lib/org/context.js";
 import { recordOrgAudit, diff } from "../../lib/org/audit.js";
 import { notifyMembers } from "../../lib/org/notify.js";
-import { badRequest, forbidden, idParam, isoDate, notFound, optionalId, optionalText, PRIORITIES, validatePatch } from "./util.js";
+import { badRequest, conflict, forbidden, idParam, isoDate, notFound, optionalId, optionalText, PRIORITIES, validatePatch } from "./util.js";
 
 const router: IRouter = Router({ mergeParams: true });
 
@@ -140,7 +140,52 @@ router.get("/projects/:id", async (req, res) => {
     project, committee, members, milestones,
     taskStats: Object.fromEntries(taskStats.map((t) => [t.status, Number(t.n)])),
     canManage: canManageProject(ctx, project),
+    canDelete: canDeleteProject(ctx, project),
   });
+});
+
+// Organisation-wide project managers, or the project's owner.
+const canDeleteProject = (ctx: OrgContext, p: OrgProject) =>
+  canManageProject(ctx, p) && (isOrgWide(ctx) || p.ownerMembershipId === ctx.membership.id);
+
+// Delete a project with its tasks, milestones and team list; its events stay (unlinked).
+// Refused while money is attached: budgets, transactions and posted accounting lines
+// are legal records, and sponsors may have been shown this project — archive it instead.
+router.delete("/projects/:id", async (req, res) => {
+  const ctx = getOrg(req);
+  const project = await findVisibleProject(ctx, idParam(req));
+  if (!project) {
+    notFound(res, "Project");
+    return;
+  }
+  if (!canDeleteProject(ctx, project)) {
+    forbidden(res, "Only the project owner or an organisation-wide project manager can delete it");
+    return;
+  }
+  const inProject = (col: any) => and(eq(col.orgId, ctx.org.id), eq(col.projectId, project.id));
+  const [[b], [tx], [jl], [sp], [tk]] = await Promise.all([
+    db.select({ n: count() }).from(orgBudgetsTable).where(inProject(orgBudgetsTable)),
+    db.select({ n: count() }).from(orgTransactionsTable).where(inProject(orgTransactionsTable)),
+    db.select({ n: count() }).from(orgJournalLinesTable).where(inProject(orgJournalLinesTable)),
+    db.select({ n: count() }).from(orgSponsorProjectsTable).where(inProject(orgSponsorProjectsTable)),
+    db.select({ n: count() }).from(orgTasksTable).where(inProject(orgTasksTable)),
+  ]);
+  if (Number(b.n) || Number(tx.n) || Number(jl.n)) {
+    conflict(res, "This project has budgets or financial transactions, which must be kept. Mark it as cancelled or completed instead.");
+    return;
+  }
+  if (Number(sp.n)) {
+    conflict(res, "This project is linked to a sponsor. Remove the sponsor link first, or mark the project as cancelled.");
+    return;
+  }
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 1000) : "";
+  await db.delete(orgProjectsTable).where(and(eq(orgProjectsTable.id, project.id), eq(orgProjectsTable.orgId, ctx.org.id)));
+  await recordOrgAudit({
+    orgId: ctx.org.id, actorUserId: ctx.userId, action: "project.deleted", entityType: "project", entityId: project.id,
+    summary: `${project.title} (${Number(tk.n)} task${Number(tk.n) === 1 ? "" : "s"} removed)`, reason: reason || null,
+    before: { status: project.status, committeeId: project.committeeId, ownerMembershipId: project.ownerMembershipId },
+  });
+  res.json({ success: true });
 });
 
 router.patch("/projects/:id", validatePatch(ProjectSchema), async (req, res) => {

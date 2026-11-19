@@ -66,6 +66,7 @@ function flags(ctx: OrgContext, task: OrgTask, project: OrgProject | null) {
     canChangeStatus: isAssignee || canEdit,
     isAssignee,
     canClaim: canClaim(ctx, task),
+    canDelete: canEdit && (task.status !== "completed" || (can(ctx, "tasks.assign") && isOrgWide(ctx))),
     canRelease: task.openToClaim && isAssignee && ["backlog", "todo", "in_progress", "blocked"].includes(task.status),
   };
 }
@@ -256,6 +257,31 @@ router.post("/tasks", validateBody(TaskSchema), async (req, res) => {
     type: "task.assigned", title: `New task: ${task.title}`, body: task.dueDate ? `Due ${task.dueDate}` : undefined, link: `/tasks/${task.id}`, email: true,
   });
   res.status(201).json({ task });
+});
+
+// Delete a task (comments, attachments' links and dependencies go with it).
+// Whoever can edit the task may delete it; completed tasks carry a validation
+// record, so only organisation-wide task managers can remove those. Points
+// already awarded for it are kept — correct them on the member's points page.
+router.delete("/tasks/:id", async (req, res) => {
+  const ctx = getOrg(req);
+  const found = await loadTask(ctx, idParam(req));
+  if (!found) {
+    notFound(res, "Task");
+    return;
+  }
+  const { task, project } = found;
+  if (!flags(ctx, task, project).canDelete) {
+    forbidden(res, task.status === "completed" ? "Only organisation-wide task managers can delete a completed task" : "You can't delete this task");
+    return;
+  }
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 1000) : "";
+  await db.delete(orgTasksTable).where(and(eq(orgTasksTable.id, task.id), eq(orgTasksTable.orgId, ctx.org.id)));
+  await recordOrgAudit({
+    orgId: ctx.org.id, actorUserId: ctx.userId, action: "task.deleted", entityType: "task", entityId: task.id, summary: task.title,
+    reason: reason || null, before: { status: task.status, projectId: task.projectId, assigneeMembershipId: task.assigneeMembershipId },
+  });
+  res.json({ success: true });
 });
 
 // Take an open task. Atomic: if two people click at once, only the first gets it.

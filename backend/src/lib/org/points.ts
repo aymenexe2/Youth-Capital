@@ -65,6 +65,11 @@ export async function recordPoints(a: Award) {
   return event;
 }
 
+/** Re-runs badge and low-score checks after a point entry is edited or removed. */
+export async function recheckMember(orgId: number, orgSlug: string, membershipId: number) {
+  await Promise.all([checkAutoAchievements(orgId, orgSlug, membershipId), checkLowScore(orgId, orgSlug, membershipId)]);
+}
+
 /** Applies an enabled rule automatically (e.g. on task approval). Idempotent per source. */
 export async function applyRule(orgId: number, orgSlug: string, ruleKey: string, membershipId: number, sourceType: string, sourceId: number, reason: string) {
   try {

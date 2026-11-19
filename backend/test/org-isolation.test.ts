@@ -892,3 +892,54 @@ describe("open tasks", () => {
     await ok(loser, "POST", `/${slugA}/tasks/${open.id}/claim`);
   });
 });
+
+describe("editing points, deleting tasks and projects", () => {
+  test("awarded points can be corrected or removed by a manager, with a reason, never on yourself", async () => {
+    const earner = await makeUser("earner");
+    const earnerId = await invite(adminA, slugA, earner, "member");
+    const { event } = await ok(adminA, "POST", `/${slugA}/performance/adjustments`, { membershipId: earnerId, points: 50, reason: "Ran the workshop" });
+
+    assert.equal((await api(earner, "PATCH", `/${slugA}/performance/events/${event.id}`, { points: 500, editReason: "I deserve more" })).status, 404);
+    assert.equal((await api(adminA, "PATCH", `/${slugA}/performance/events/${event.id}`, { points: 30 })).status, 400, "an edit needs a reason");
+
+    await ok(adminA, "PATCH", `/${slugA}/performance/events/${event.id}`, { points: 30, editReason: "Shared the workshop with a colleague" });
+    const view = await ok(adminA, "GET", `/${slugA}/performance/members/${earnerId}`);
+    assert.equal(view.total, 30);
+    assert.equal(view.canEditPoints, true);
+
+    await ok(adminA, "DELETE", `/${slugA}/performance/events/${event.id}`, { reason: "Recorded on the wrong person" });
+    assert.equal((await ok(adminA, "GET", `/${slugA}/performance/members/${earnerId}`)).total, 0);
+
+    // Admins can't edit their own entries either.
+    const { me: adminMe } = await ok(adminA, "GET", `/${slugA}`);
+    const own = await ok(dual, "POST", `/${slugA}/performance/adjustments`, { membershipId: adminMe.membershipId, points: 5, reason: "Thanks for the help" });
+    assert.equal((await api(adminA, "PATCH", `/${slugA}/performance/events/${own.event.id}`, { points: 900, editReason: "Self-serve" })).status, 404);
+  });
+
+  test("tasks: editors delete open tasks; completed ones need an org-wide manager", async () => {
+    const tmp = (await ok(adminA, "POST", `/${slugA}/tasks`, { title: "Delete me", assigneeMembershipId: memberAId, projectId: projectA1 })).task;
+    assert.equal((await api(memberA, "DELETE", `/${slugA}/tasks/${tmp.id}`)).status, 403, "the assignee can't delete it");
+    await ok(adminA, "DELETE", `/${slugA}/tasks/${tmp.id}`, { reason: "Duplicate" });
+    assert.equal((await api(adminA, "GET", `/${slugA}/tasks/${tmp.id}`)).status, 404);
+
+    // A member's own personal task is theirs to delete.
+    const mine = (await ok(memberA, "POST", `/${slugA}/tasks`, { title: "My note to self" })).task;
+    await ok(memberA, "DELETE", `/${slugA}/tasks/${mine.id}`);
+  });
+
+  test("projects: deletable when they hold no money, refused when they have budgets", async () => {
+    const empty = (await ok(adminA, "POST", `/${slugA}/projects`, { title: "Abandoned idea" })).project;
+    const child = (await ok(adminA, "POST", `/${slugA}/tasks`, { title: "Child task", projectId: empty.id })).task;
+    assert.equal((await ok(adminA, "GET", `/${slugA}/projects/${empty.id}`)).canDelete, true);
+    assert.equal((await api(memberA, "DELETE", `/${slugA}/projects/${empty.id}`)).status, 404, "invisible to a plain member");
+    await ok(adminA, "DELETE", `/${slugA}/projects/${empty.id}`, { reason: "Never started" });
+    assert.equal((await api(adminA, "GET", `/${slugA}/projects/${empty.id}`)).status, 404);
+    assert.equal((await api(adminA, "GET", `/${slugA}/tasks/${child.id}`)).status, 404, "its tasks go with it");
+
+    const funded = (await ok(adminA, "POST", `/${slugA}/projects`, { title: "Funded project" })).project;
+    await ok(adminA, "POST", `/${slugA}/finance/budgets`, { name: "Funded budget", projectId: funded.id, approvedAmount: "1000" });
+    const r = await api(adminA, "DELETE", `/${slugA}/projects/${funded.id}`);
+    assert.equal(r.status, 409);
+    assert.match(r.body.message, /budgets or financial transactions/);
+  });
+});

@@ -9,7 +9,7 @@ import { validateBody } from "../../middlewares/validate.js";
 import { getOrg, can, isOrgWide, colleagueMembershipIds, requirePerm, type OrgContext } from "../../lib/org/context.js";
 import { recordOrgAudit, diff } from "../../lib/org/audit.js";
 import { notifyMembers } from "../../lib/org/notify.js";
-import { getRules, getSettings, recordPoints, memberTotal, openReviewCase, reviewerMembershipIds, RULE_KEYS } from "../../lib/org/points.js";
+import { getRules, getSettings, recordPoints, recheckMember, memberTotal, openReviewCase, reviewerMembershipIds, RULE_KEYS } from "../../lib/org/points.js";
 import { httpUrl } from "../../validation/common.js";
 import { badRequest, conflict, forbidden, idParam, notFound, optionalText, validatePatch } from "./util.js";
 
@@ -114,7 +114,8 @@ router.get("/performance/members/:id", async (req, res) => {
       .from(orgMemberAchievementsTable).innerJoin(orgAchievementsTable, eq(orgAchievementsTable.id, orgMemberAchievementsTable.achievementId))
       .where(eq(orgMemberAchievementsTable.membershipId, target.id)),
   ]);
-  res.json({ total, history: history.map(({ event, actorName }) => ({ ...event, actorName })), badges });
+  const canEditPoints = await canManagePointsFor(ctx, target.id);
+  res.json({ total, history: history.map(({ event, actorName }) => ({ ...event, actorName })), badges, canEditPoints });
 });
 
 // Manual awards and adjustments always need a written reason.
@@ -158,6 +159,68 @@ router.post("/performance/adjustments", validateBody(AdjustSchema), async (req, 
     return;
   }
   res.status(201).json({ event });
+});
+
+// Correct an awarded point entry (wrong amount, wrong reason) or remove it.
+// Same people who can award points to that member; never on your own entries; the
+// change and its reason go to the audit log with the before/after values.
+async function loadPointEvent(ctx: OrgContext, id: number | null) {
+  if (!id) return null;
+  const [e] = await db.select().from(orgPointEventsTable).where(and(eq(orgPointEventsTable.id, id), eq(orgPointEventsTable.orgId, ctx.org.id)));
+  return e ?? null;
+}
+
+const EditPointsSchema = z.object({
+  points: z.coerce.number().int().min(-1000).max(1000).refine((n) => n !== 0, "Points can't be zero — delete the entry instead").optional(),
+  reason: z.string().trim().min(3).max(1000).optional(),
+  editReason: z.string().trim().min(3).max(1000),
+});
+
+router.patch("/performance/events/:id", validateBody(EditPointsSchema), async (req, res) => {
+  const ctx = getOrg(req);
+  const event = await loadPointEvent(ctx, idParam(req));
+  if (!event || !(await canManagePointsFor(ctx, event.membershipId))) {
+    notFound(res, "Point entry");
+    return;
+  }
+  const { editReason, ...patch } = req.body as z.infer<typeof EditPointsSchema>;
+  if (patch.points === undefined && patch.reason === undefined) {
+    badRequest(res, "Nothing to change");
+    return;
+  }
+  const [updated] = await db.update(orgPointEventsTable).set(patch).where(eq(orgPointEventsTable.id, event.id)).returning();
+  await recordOrgAudit({
+    orgId: ctx.org.id, actorUserId: ctx.userId, action: "points.edited", entityType: "membership", entityId: event.membershipId,
+    summary: `${event.points > 0 ? "+" : ""}${event.points} → ${updated.points > 0 ? "+" : ""}${updated.points}`, reason: editReason,
+    before: { points: event.points, reason: event.reason }, after: { points: updated.points, reason: updated.reason },
+  });
+  if (updated.points !== event.points) {
+    notifyMembers(ctx.org.id, ctx.org.slug, [event.membershipId], ctx.userId, {
+      type: "points", title: `Points corrected: ${event.points > 0 ? "+" : ""}${event.points} → ${updated.points > 0 ? "+" : ""}${updated.points}`, body: editReason, link: "/performance",
+    });
+  }
+  await recheckMember(ctx.org.id, ctx.org.slug, event.membershipId);
+  res.json({ event: updated });
+});
+
+router.delete("/performance/events/:id", validateBody(z.object({ reason: z.string().trim().min(3).max(1000) })), async (req, res) => {
+  const ctx = getOrg(req);
+  const event = await loadPointEvent(ctx, idParam(req));
+  if (!event || !(await canManagePointsFor(ctx, event.membershipId))) {
+    notFound(res, "Point entry");
+    return;
+  }
+  await db.delete(orgPointEventsTable).where(eq(orgPointEventsTable.id, event.id));
+  await recordOrgAudit({
+    orgId: ctx.org.id, actorUserId: ctx.userId, action: "points.removed", entityType: "membership", entityId: event.membershipId,
+    summary: `${event.points > 0 ? "+" : ""}${event.points} removed`, reason: req.body.reason,
+    before: { points: event.points, reason: event.reason, ruleKey: event.ruleKey, sourceType: event.sourceType, sourceId: event.sourceId },
+  });
+  notifyMembers(ctx.org.id, ctx.org.slug, [event.membershipId], ctx.userId, {
+    type: "points", title: `Points removed: ${event.points > 0 ? "+" : ""}${event.points}`, body: req.body.reason, link: "/performance",
+  });
+  await recheckMember(ctx.org.id, ctx.org.slug, event.membershipId);
+  res.json({ success: true });
 });
 
 // ── Rules & settings ───────────────────────────────────────────────────────
