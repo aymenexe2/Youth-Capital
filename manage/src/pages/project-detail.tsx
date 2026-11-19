@@ -17,6 +17,7 @@ import {
 import { OptionSelect, PersonPicker } from "@/components/pickers";
 import { EventFormDialog, ProjectFormDialog, TaskFormDialog } from "@/components/forms";
 import { TaskDrawer } from "@/components/task-drawer";
+import { ConfirmDelete } from "@/components/confirm-delete";
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -30,11 +31,17 @@ export default function ProjectDetailPage() {
   const [newTask, setNewTask] = useState(false);
   const [newEvent, setNewEvent] = useState(false);
   const [openTask, setOpenTask] = useState<number | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const removeProject = useOrgMutation((_: void, base) => api.del(`${base}/projects/${id}`), {
+    success: "Project deleted", onSuccess: () => { setConfirmDelete(false); navigate(path("/projects")); },
+  });
 
   if (q.isLoading) return <div className="space-y-4"><Skeleton className="h-8 w-1/2" /><Skeleton className="h-40 w-full rounded-xl" /></div>;
   if (q.error || !q.data) return <ErrorState message={t("This project isn't available.")} />;
 
-  const { project, committee, members, milestones, taskStats, canManage } = q.data;
+  const { project, committee, members, milestones, taskStats, canManage, canDelete } = q.data;
+  const taskCount = Object.values((taskStats ?? {}) as Record<string, number>).reduce((a, n) => a + n, 0);
   const total = Object.entries(taskStats as Record<string, number>).filter(([k]) => k !== "cancelled").reduce((a, [, n]) => a + n, 0);
   const done = taskStats.completed ?? 0;
   const pct = total ? Math.round((done / total) * 100) : 0;
@@ -57,6 +64,7 @@ export default function ProjectDetailPage() {
           {canManage && (
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setEditing(true)}><Pencil />{t("Edit")}</Button>
+              {canDelete && <Button variant="outline" className="text-destructive" onClick={() => { setConfirmText(""); setConfirmDelete(true); }} aria-label={t("Delete project")}><Trash2 /></Button>}
               <Button onClick={() => setNewTask(true)}><Plus />{t("Task")}</Button>
             </div>
           )}
@@ -156,6 +164,18 @@ export default function ProjectDetailPage() {
       </div>
 
       <ProjectFormDialog open={editing} onOpenChange={setEditing} project={project} />
+      <ConfirmDelete
+        open={confirmDelete} onOpenChange={setConfirmDelete} busy={removeProject.isPending} disabled={confirmText.trim() !== project.title.trim()}
+        onConfirm={() => { if (confirmText.trim() === project.title.trim()) removeProject.mutate(); }}
+        title={t("Delete “{title}”?", { title: project.title })}
+        description={t("This deletes the project with its {n} tasks, milestones and team list. Its events are kept. Projects with budgets or transactions can't be deleted — mark them cancelled instead. This can't be undone.", { n: taskCount })}
+        confirmLabel={t("Delete project")}
+      >
+        <div className="space-y-1.5">
+          <label htmlFor="del-project" className="text-sm">{t("Type the project name to confirm:")} <span className="font-semibold">{project.title}</span></label>
+          <Input id="del-project" value={confirmText} onChange={(e) => setConfirmText(e.target.value)} autoComplete="off" />
+        </div>
+      </ConfirmDelete>
       <TaskFormDialog open={newTask} onOpenChange={setNewTask} defaults={{ projectId: project.id }} />
       <EventFormDialog open={newEvent} onOpenChange={setNewEvent} defaults={{ projectId: project.id }} onSaved={(e) => navigate(path(`/events/${e.id}`))} />
       <TaskDrawer taskId={openTask} onClose={() => setOpenTask(null)} />

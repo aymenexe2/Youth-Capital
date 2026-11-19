@@ -22,6 +22,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { KeyValue, PersonAvatar, Pill, PriorityPill, StatusPill } from "./primitives";
 import { OptionSelect } from "./pickers";
 import { FormDialog, TaskFormDialog } from "./forms";
+import { ConfirmDelete } from "./confirm-delete";
 
 const DIRECT = ["backlog", "todo", "in_progress", "blocked", "cancelled"];
 
@@ -29,13 +30,13 @@ export function TaskDrawer({ taskId, onClose }: { taskId: number | null; onClose
   return (
     <Sheet open={taskId != null} onOpenChange={(o) => !o && onClose()}>
       <SheetContent side="right" className="w-full gap-0 overflow-y-auto p-0 sm:max-w-xl">
-        {taskId != null && <TaskDetail taskId={taskId} />}
+        {taskId != null && <TaskDetail taskId={taskId} onClose={onClose} />}
       </SheetContent>
     </Sheet>
   );
 }
 
-function TaskDetail({ taskId }: { taskId: number }) {
+function TaskDetail({ taskId, onClose }: { taskId: number; onClose: () => void }) {
   const { t, lang } = useI18n();
   const { org, path } = useOrg();
   const q = useOrgQuery<any>(`/tasks/${taskId}`);
@@ -46,6 +47,10 @@ function TaskDetail({ taskId }: { taskId: number }) {
 
   const status = useOrgMutation((body: { status: string; reason?: string }, base) => api.patch(`${base}/tasks/${taskId}`, body), { success: "Task updated" });
   const submit = useOrgMutation((_: void, base) => api.post(`${base}/tasks/${taskId}/submit`, {}), { success: "Submitted for review" });
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const removeTask = useOrgMutation((_: void, base) => api.del(`${base}/tasks/${taskId}`), {
+    success: "Task deleted", onSuccess: () => { setConfirmDelete(false); onClose(); },
+  });
   const claim = useOrgMutation((_: void, base) => api.post(`${base}/tasks/${taskId}/claim`, {}), { success: "The task is yours" });
   const release = useOrgMutation((_: void, base) => api.post(`${base}/tasks/${taskId}/release`, {}), { success: "Task given back" });
   const review = useOrgMutation((body: { decision: "approve" | "return"; reason?: string }, base) => api.post(`${base}/tasks/${taskId}/review`, body), {
@@ -57,7 +62,7 @@ function TaskDetail({ taskId }: { taskId: number }) {
   }
   if (!q.data) return <div className="p-6 text-sm text-muted-foreground">{t("This task isn't available.")}</div>;
 
-  const { task, comments, dependencies, dependents, history, canEdit, canValidate, canSubmit, canChangeStatus, canClaim, canRelease } = q.data;
+  const { task, comments, dependencies, dependents, history, canEdit, canValidate, canSubmit, canChangeStatus, canClaim, canRelease, canDelete } = q.data;
   const overdue = isOverdue(task.dueDate, task.status);
   const openDeps = dependencies.filter((d: any) => d.status !== "completed");
 
@@ -125,6 +130,7 @@ function TaskDetail({ taskId }: { taskId: number }) {
             <Button size="sm" variant="ghost" onClick={() => setReopen(true)}><RotateCcw />{t("Reopen")}</Button>
           )}
           {canEdit && <Button size="sm" variant="outline" onClick={() => setEditing(true)}><Pencil />{t("Edit")}</Button>}
+          {canDelete && <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setConfirmDelete(true)} aria-label={t("Delete task")}><Trash2 /></Button>}
         </div>
       </div>
 
@@ -185,6 +191,12 @@ function TaskDetail({ taskId }: { taskId: number }) {
         </Tabs>
       </div>
 
+      <ConfirmDelete
+        open={confirmDelete} onOpenChange={setConfirmDelete} busy={removeTask.isPending} onConfirm={() => removeTask.mutate()}
+        title={t("Delete this task?")}
+        description={t("Its comments, attachments and history are deleted. Points already awarded for it are kept. This can't be undone.")}
+        confirmLabel={t("Delete task")}
+      />
       <TaskFormDialog open={editing} onOpenChange={setEditing} task={task} />
       <FormDialog
         open={reviewMode === "return"} onOpenChange={(o) => !o && setReviewMode(null)} title={t("Request changes")}

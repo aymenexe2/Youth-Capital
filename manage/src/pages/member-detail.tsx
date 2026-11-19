@@ -29,6 +29,8 @@ export default function MemberDetailPage() {
   const perf = useOrgQuery<any>(`/performance/members/${id}`, { retry: false });
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [allPoints, setAllPoints] = useState(false);
+  const [pointEdit, setPointEdit] = useState<null | { mode: "edit" | "delete"; entry: any }>(null);
 
   if (q.isLoading) return <div className="space-y-4"><Skeleton className="h-24 w-full rounded-xl" /><Skeleton className="h-48 w-full rounded-xl" /></div>;
   if (q.error || !q.data) return <ErrorState message={t("This member's profile isn't available to you.")} />;
@@ -96,14 +98,25 @@ export default function MemberDetailPage() {
             </div>
             {perf.data.history.length > 0 && (
               <ul className="mt-4 divide-y divide-border border-t border-border">
-                {perf.data.history.slice(0, 8).map((h: any) => (
-                  <li key={h.id} className="flex items-center gap-3 py-2 text-sm">
+                {(allPoints ? perf.data.history : perf.data.history.slice(0, 8)).map((h: any) => (
+                  <li key={h.id} className="group flex items-center gap-3 py-2 text-sm">
                     <span className="min-w-0 flex-1 truncate">{h.reason}</span>
                     <span className="text-xs text-muted-foreground">{h.actorName ?? t("automatic")}</span>
                     <span className={`w-12 text-end font-semibold tabular ${h.points >= 0 ? "text-st-green" : "text-st-red"}`}>{h.points > 0 ? `+${h.points}` : h.points}</span>
+                    {perf.data.canEditPoints && (
+                      <span className="flex gap-0.5">
+                        <Button size="sm" variant="ghost" className="size-7 p-0" aria-label={t("Edit points")} onClick={() => setPointEdit({ mode: "edit", entry: h })}><Pencil className="size-3.5" /></Button>
+                        <Button size="sm" variant="ghost" className="size-7 p-0 text-destructive" aria-label={t("Remove points")} onClick={() => setPointEdit({ mode: "delete", entry: h })}><Trash2 className="size-3.5" /></Button>
+                      </span>
+                    )}
                   </li>
                 ))}
               </ul>
+            )}
+            {perf.data.history.length > 8 && (
+              <button type="button" className="mt-2 text-xs font-medium text-primary hover:underline" onClick={() => setAllPoints((v) => !v)}>
+                {allPoints ? t("Show less") : t("Show all {n}", { n: perf.data.history.length })}
+              </button>
             )}
           </Section>
         )}
@@ -121,6 +134,7 @@ export default function MemberDetailPage() {
       </div>
       {canEdit && <EditMembership open={editing} onOpenChange={setEditing} member={m} canChangeRole={canChangeRole} />}
       {canDelete && <DeleteMember open={deleting} onOpenChange={setDeleting} member={m} />}
+      <PointEntryDialog state={pointEdit} onClose={() => setPointEdit(null)} />
     </>
   );
 }
@@ -203,5 +217,46 @@ function DeleteMember({ open, onOpenChange, member }: { open: boolean; onOpenCha
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+// Correct or remove an awarded point entry. Both need a reason, which goes to the audit log.
+function PointEntryDialog({ state, onClose }: { state: null | { mode: "edit" | "delete"; entry: any }; onClose: () => void }) {
+  const { t } = useI18n();
+  const [points, setPoints] = useState("");
+  const [reason, setReason] = useState("");
+  const [why, setWhy] = useState("");
+  useEffect(() => {
+    if (state) { setPoints(String(state.entry.points)); setReason(state.entry.reason); setWhy(""); }
+  }, [state]);
+  const save = useOrgMutation((body: any, base) => state?.mode === "delete"
+    ? api.del(`${base}/performance/events/${state.entry.id}`, body)
+    : api.patch(`${base}/performance/events/${state!.entry.id}`, body), {
+    success: state?.mode === "delete" ? "Points removed" : "Points updated", onSuccess: onClose,
+  });
+  if (!state) return null;
+  const n = Number(points);
+  const valid = why.trim().length >= 3 && (state.mode === "delete" || (Number.isInteger(n) && n !== 0 && Math.abs(n) <= 1000 && reason.trim().length >= 3));
+  return (
+    <FormDialog
+      open onOpenChange={(o) => !o && onClose()}
+      title={state.mode === "delete" ? t("Remove these points?") : t("Edit points")}
+      description={state.mode === "delete"
+        ? t("{points} points for “{reason}” will be removed from this member's total.", { points: state.entry.points > 0 ? `+${state.entry.points}` : state.entry.points, reason: state.entry.reason })
+        : t("The member is notified if the amount changes.")}
+      submitLabel={state.mode === "delete" ? t("Remove points") : t("Save changes")}
+      busy={save.isPending} disabled={!valid}
+      onSubmit={() => save.mutate(state.mode === "delete" ? { reason: why.trim() } : { points: n, reason: reason.trim(), editReason: why.trim() })}
+    >
+      {state.mode === "edit" && (
+        <div className="grid gap-4 sm:grid-cols-[120px_1fr]">
+          <Field label={t("Points")} htmlFor="pe-points"><Input id="pe-points" type="number" min={-1000} max={1000} step={1} dir="ltr" value={points} onChange={(e) => setPoints(e.target.value)} /></Field>
+          <Field label={t("Reason")} htmlFor="pe-reason"><Input id="pe-reason" maxLength={1000} value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+        </div>
+      )}
+      <Field label={state.mode === "delete" ? t("Why are you removing them?") : t("Why are you changing this?")} htmlFor="pe-why" required>
+        <Textarea id="pe-why" rows={2} maxLength={1000} value={why} onChange={(e) => setWhy(e.target.value)} />
+      </Field>
+    </FormDialog>
   );
 }
