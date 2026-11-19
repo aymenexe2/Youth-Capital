@@ -41,7 +41,7 @@ function General() {
   const { org } = useOrg();
   const [f, setF] = useState<any>({});
   useEffect(() => {
-    setF({ name: org.name, description: org.description ?? "", logoUrl: org.logoUrl ?? "", primaryColor: org.primaryColor ?? "", defaultLanguage: org.defaultLanguage, currency: org.currency, timezone: org.timezone });
+    setF({ name: org.name, description: org.description ?? "", logoUrl: org.logoUrl ?? "", primaryColor: org.primaryColor ?? "", defaultLanguage: org.defaultLanguage, currency: org.currency, timezone: org.timezone, joiningFee: String(Number(org.joiningFee ?? 100)), annualFee: String(Number(org.annualFee ?? 200)) });
   }, [org]);
   const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
   const save = useOrgMutation((body: any, base) => api.patch(`${base}`, body), { success: "Settings saved" });
@@ -49,7 +49,7 @@ function General() {
     <Section title={t("Organisation")}>
       <form className="max-w-2xl space-y-4" onSubmit={(e) => {
         e.preventDefault();
-        save.mutate({ name: f.name.trim(), description: f.description.trim() || null, logoUrl: f.logoUrl.trim() || null, primaryColor: f.primaryColor || null, defaultLanguage: f.defaultLanguage, currency: f.currency, timezone: f.timezone });
+        save.mutate({ name: f.name.trim(), description: f.description.trim() || null, logoUrl: f.logoUrl.trim() || null, primaryColor: f.primaryColor || null, defaultLanguage: f.defaultLanguage, currency: f.currency, timezone: f.timezone, joiningFee: Number(f.joiningFee) || 0, annualFee: Number(f.annualFee) || 0 });
       }}>
         <Field label={t("Name")} htmlFor="s-name" required><Input id="s-name" value={f.name ?? ""} onChange={(e) => set("name", e.target.value)} maxLength={120} /></Field>
         <Field label={t("Description")} htmlFor="s-desc"><Textarea id="s-desc" rows={3} value={f.description ?? ""} onChange={(e) => set("description", e.target.value)} maxLength={2000} /></Field>
@@ -58,6 +58,11 @@ function General() {
           <Field label={t("Default language")}><OptionSelect value={f.defaultLanguage} onChange={(v) => set("defaultLanguage", v ?? "fr")} options={[{ value: "fr", label: "Français" }, { value: "en", label: "English" }, { value: "ar", label: "العربية" }]} /></Field>
           <Field label={t("Currency")}><OptionSelect value={f.currency} onChange={(v) => set("currency", v ?? "MAD")} options={["MAD", "EUR", "USD"].map((c) => ({ value: c, label: c }))} /></Field>
           <Field label={t("Timezone")}><OptionSelect value={f.timezone} onChange={(v) => set("timezone", v ?? "Africa/Casablanca")} options={["Africa/Casablanca", "Europe/Paris", "Europe/Brussels", "Europe/Madrid", "UTC"].map((z) => ({ value: z, label: z }))} /></Field>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field label={t("Joining fee")} htmlFor="s-join" hint={t("One time, first year only")}><Input id="s-join" type="number" min={0} step="0.01" dir="ltr" value={f.joiningFee ?? ""} onChange={(e) => set("joiningFee", e.target.value)} /></Field>
+          <Field label={t("Annual membership")} htmlFor="s-annual" hint={t("Also the yearly renewal")}><Input id="s-annual" type="number" min={0} step="0.01" dir="ltr" value={f.annualFee ?? ""} onChange={(e) => set("annualFee", e.target.value)} /></Field>
+          <Field label={t("Total first-year payment")}><Input value={`${(Number(f.joiningFee) || 0) + (Number(f.annualFee) || 0)} ${f.currency ?? ""}`} dir="ltr" disabled /></Field>
         </div>
         <Button type="submit" disabled={save.isPending || !f.name || f.name.trim().length < 2}>{t("Save changes")}</Button>
       </form>

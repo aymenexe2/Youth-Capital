@@ -64,9 +64,11 @@ export function TaskFormDialog({ open, onOpenChange, task, defaults, onSaved }: 
       title: task.title, description: task.description ?? "", definitionOfDone: task.definitionOfDone ?? "",
       assigneeMembershipId: task.assigneeMembershipId, reviewerMembershipId: task.reviewerMembershipId,
       dueDate: task.dueDate ?? "", priority: task.priority, evidenceRequired: task.evidenceRequired,
+      openToClaim: !!task.openToClaim, claimCommitteeId: task.claimCommitteeId ?? null,
     } : {
       title: "", description: "", definitionOfDone: "", projectId: defaults?.projectId ?? null, eventId: defaults?.eventId ?? null,
       assigneeMembershipId: null, reviewerMembershipId: null, dueDate: "", priority: "medium", evidenceRequired: false,
+      openToClaim: false, claimCommitteeId: null,
       status: defaults?.status === "backlog" ? "backlog" : "todo",
     });
   }, [open, task, defaults?.projectId, defaults?.eventId, defaults?.status]);
@@ -77,6 +79,9 @@ export function TaskFormDialog({ open, onOpenChange, task, defaults, onSaved }: 
     .filter((p) => p.canManage || (can("tasks.assign") && orgWide))
     .map((p) => ({ value: p.id, label: p.title }));
   const personalOnly = !task && !f.projectId && !f.eventId && !(can("tasks.assign") && orgWide);
+  // Publishing work for others to take needs tasks.assign (the API checks the rest).
+  const canPublishOpen = !personalOnly && can("tasks.assign");
+  const { committees } = useCommittees();
 
   const save = useOrgMutation(
     (body: any, base) => (task ? api.patch(`${base}/tasks/${task.id}`, body) : api.post(`${base}/tasks`, body)),
@@ -88,6 +93,10 @@ export function TaskFormDialog({ open, onOpenChange, task, defaults, onSaved }: 
       assigneeMembershipId: personalOnly ? me.membershipId : f.assigneeMembershipId, reviewerMembershipId: f.reviewerMembershipId,
       dueDate: f.dueDate || null, priority: f.priority, evidenceRequired: f.evidenceRequired,
     };
+    if (canPublishOpen) {
+      Object.assign(body, { openToClaim: !!f.openToClaim, claimCommitteeId: f.openToClaim ? f.claimCommitteeId : null });
+      if (f.openToClaim && !task) body.assigneeMembershipId = null;
+    }
     if (!task) Object.assign(body, { projectId: f.projectId, eventId: f.eventId, status: f.status });
     save.mutate(body);
   };
@@ -109,11 +118,28 @@ export function TaskFormDialog({ open, onOpenChange, task, defaults, onSaved }: 
       <Field label={t("Definition of done")} htmlFor="task-dod" hint={t("What exactly must be delivered for this to count as complete.")}>
         <Textarea id="task-dod" rows={2} value={f.definitionOfDone ?? ""} onChange={(e) => set("definitionOfDone", e.target.value)} maxLength={3000} />
       </Field>
+      {canPublishOpen && (!task || !task.assigneeMembershipId) && (
+        <div className="space-y-3 rounded-lg border border-border p-3">
+          <label className="flex items-center justify-between gap-4">
+            <span>
+              <span className="block text-sm font-medium">{t("Open task")}</span>
+              <span className="block text-xs text-muted-foreground">{t("Leave it unassigned so anyone who can do it takes it. The first to take it gets it.")}</span>
+            </span>
+            <Switch checked={!!f.openToClaim} onCheckedChange={(v) => set("openToClaim", v)} />
+          </label>
+          {f.openToClaim && (
+            <Field label={t("Who can take it")}>
+              <OptionSelect value={f.claimCommitteeId} onChange={(v) => set("claimCommitteeId", v ? Number(v) : null)}
+                options={committees.map((c: any) => ({ value: c.id, label: t("Members of {name}", { name: c.name }) }))} allowNone noneLabel={t("Anyone in the organisation")} />
+            </Field>
+          )}
+        </div>
+      )}
       {!personalOnly && (
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={t("Assignee")}>
+          {!(f.openToClaim && !task?.assigneeMembershipId) && <Field label={t("Assignee")}>
             <PersonPicker value={f.assigneeMembershipId} onChange={(v) => set("assigneeMembershipId", v)} exclude={[f.reviewerMembershipId]} />
-          </Field>
+          </Field>}
           <Field label={t("Reviewer")} hint={t("Validates the work. Can't be the assignee.")}>
             <PersonPicker value={f.reviewerMembershipId} onChange={(v) => set("reviewerMembershipId", v)} exclude={[f.assigneeMembershipId]} placeholder={t("Project managers")} />
           </Field>

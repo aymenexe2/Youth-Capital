@@ -2,7 +2,7 @@ import { lazy, Suspense, type ReactNode } from "react";
 import { Redirect, Route, Switch, useParams } from "wouter";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
-import { Loader2 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider, useI18n } from "@/lib/i18n";
@@ -12,6 +12,7 @@ import { OrgProvider, type Me, type Organisation } from "@/hooks/use-org";
 import { AppShell } from "@/components/shell";
 import { ErrorState } from "@/components/primitives";
 import LoginPage from "@/pages/login";
+import { Splash } from "@/components/splash";
 
 const OrgsPage = lazy(() => import("@/pages/orgs"));
 const NewOrgPage = lazy(() => import("@/pages/new-org"));
@@ -35,13 +36,23 @@ const SponsorDetailPage = lazy(() => import("@/pages/sponsors").then((m) => ({ d
 const PortalPage = lazy(() => import("@/pages/portal"));
 const AccountingPage = lazy(() => import("@/pages/accounting"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
+const ProfilePage = lazy(() => import("@/pages/profile"));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: (n, err) => n < 2 && (errorStatus(err) ?? 500) >= 500 } },
 });
 
-function FullPageSpinner() {
-  return <div className="flex min-h-screen items-center justify-center"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>;
+const FullPageSpinner = Splash;
+
+// While a page's code loads inside the shell: a header and a few cards, not a spinner.
+function PageSkeleton() {
+  return (
+    <div className="space-y-6" aria-busy="true">
+      <div className="space-y-2"><Skeleton className="h-3 w-24" /><Skeleton className="h-8 w-64" /><Skeleton className="h-3 w-80 max-w-full" /></div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-2xl" />)}</div>
+      <Skeleton className="h-80 rounded-2xl" />
+    </div>
+  );
 }
 
 // Everything except /login needs a Youth Capital session.
@@ -85,7 +96,7 @@ function OrgRoutes() {
   return (
     <OrgProvider slug={slug} org={q.data!.organisation} me={q.data!.me}>
       <AppShell>
-        <Suspense fallback={<div className="flex justify-center py-24"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>}>
+        <Suspense fallback={<PageSkeleton />}>
           <Switch>
             <Route path={base} component={DashboardPage} />
             <Route path={`${base}/members`} component={MembersPage} />
@@ -106,6 +117,7 @@ function OrgRoutes() {
             <Route path={`${base}/sponsors`} component={SponsorsPage} />
             <Route path={`${base}/sponsors/:id`} component={SponsorDetailPage} />
             <Route path={`${base}/settings`} component={SettingsPage} />
+            <Route path={`${base}/profile`} component={ProfilePage} />
             <Route><Redirect to={base} /></Route>
           </Switch>
         </Suspense>

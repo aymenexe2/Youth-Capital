@@ -24,6 +24,7 @@ import financeRouter from "./finance.js";
 import accountingRouter from "./accounting.js";
 import sponsorsRouter, { sponsorGuard } from "./sponsors.js";
 import filesRouter from "./files.js";
+import duesRouter from "./dues.js";
 
 // /api/org — the organisation workspace API. Everything under /:slug runs
 // through loadOrgContext, which resolves the caller's membership in that
@@ -191,6 +192,7 @@ router.post("/invitations/:token/accept", authLimiter, async (req, res) => {
 const scoped: IRouter = Router({ mergeParams: true });
 scoped.use(workspaceRouter);
 scoped.use(membersRouter);
+scoped.use(duesRouter);
 scoped.use(projectsRouter);
 scoped.use(eventsRouter);
 scoped.use(tasksRouter);

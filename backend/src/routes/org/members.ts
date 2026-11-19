@@ -12,6 +12,7 @@ import {
 } from "../../lib/org/context.js";
 import { ADMIN_ROLE_KEY } from "../../lib/org/permissions.js";
 import { recordOrgAudit, diff } from "../../lib/org/audit.js";
+import { canManageDues, duesYear, paidSet } from "../../lib/org/dues.js";
 import { isMailerConfigured, sendEmailToMany } from "../../lib/mailer.js";
 import { wrapEmailHtml } from "../../lib/email-template.js";
 import { manageUrl } from "../../lib/urls.js";
@@ -67,6 +68,7 @@ router.get("/members", async (req, res) => {
   const ctx = getOrg(req);
   const rows = await membersQuery(ctx.org.id).where(and(eq(orgMembershipsTable.orgId, ctx.org.id), ne(orgMembershipsTable.status, "left"))).orderBy(usersTable.fullName);
   const visible = rows.filter(await visibilityFilter(ctx));
+  const paid = await paidSet(ctx.org.id, duesYear(ctx.org));
   const committeeRows = visible.length
     ? await db.select({ membershipId: orgCommitteeMembersTable.membershipId, committeeId: orgCommitteeMembersTable.committeeId, role: orgCommitteeMembersTable.role })
         .from(orgCommitteeMembersTable).where(eq(orgCommitteeMembersTable.orgId, ctx.org.id))
@@ -76,6 +78,7 @@ router.get("/members", async (req, res) => {
       ...m,
       committees: committeeRows.filter((c) => c.membershipId === m.membershipId).map(({ membershipId, ...c }) => c),
       canEdit: canEditMember(ctx, { id: m.membershipId, regionId: m.regionId }),
+      verified: paid.has(m.membershipId),
     })),
     scope: ctx.scope,
   });
@@ -102,8 +105,10 @@ router.get("/members/:id", async (req, res) => {
       .where(and(eq(orgTasksTable.orgId, ctx.org.id), eq(orgTasksTable.assigneeMembershipId, member.membershipId)))
       .groupBy(orgTasksTable.status),
   ]);
+  const verified = (await paidSet(ctx.org.id, duesYear(ctx.org), [member.membershipId])).has(member.membershipId);
   res.json({
-    member: { ...member, committees, projects, taskStats: Object.fromEntries(taskStats.map((t) => [t.status, Number(t.n)])) },
+    member: { ...member, verified, committees, projects, taskStats: Object.fromEntries(taskStats.map((t) => [t.status, Number(t.n)])) },
+    canManageDues: canManageDues(ctx),
     canEdit: canEditMember(ctx, { id: member.membershipId, regionId: member.regionId }),
     canChangeRole: can(ctx, "roles.manage"),
     canDelete: canDeleteMember(ctx, member.membershipId),

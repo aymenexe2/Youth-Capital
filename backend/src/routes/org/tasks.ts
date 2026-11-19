@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import {
   db, orgTasksTable, orgTaskCommentsTable, orgTaskDependenciesTable, orgProjectsTable, orgEventsTable, orgMilestonesTable,
-  orgProjectMembersTable, orgMembershipsTable, orgAuditEventsTable, orgFilesTable, usersTable, type OrgTask, type OrgProject,
+  orgProjectMembersTable, orgMembershipsTable, orgCommitteesTable, orgAuditEventsTable, orgFilesTable, usersTable, type OrgTask, type OrgProject,
 } from "@workspace/db";
 import { and, eq, or, inArray, ne, lt, lte, gte, notInArray, isNull, sql, desc, asc, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -36,6 +36,12 @@ async function taskVisibility(ctx: OrgContext): Promise<SQL> {
     const projects = await visibleProjectIds(ctx);
     if (projects === "all") mine.push(sql`${orgTasksTable.projectId} is not null`);
     else if (projects.length) mine.push(inArray(orgTasksTable.projectId, projects));
+    // Open tasks waiting to be claimed, for whoever is eligible to take them.
+    mine.push(and(
+      eq(orgTasksTable.openToClaim, true), isNull(orgTasksTable.assigneeMembershipId),
+      ctx.committeeIds.length ? or(isNull(orgTasksTable.claimCommitteeId), inArray(orgTasksTable.claimCommitteeId, ctx.committeeIds))! : isNull(orgTasksTable.claimCommitteeId),
+      projects === "all" ? sql`true` : projects.length ? or(isNull(orgTasksTable.projectId), inArray(orgTasksTable.projectId, projects))! : isNull(orgTasksTable.projectId),
+    )!);
   }
   return and(tenant, or(...mine))!;
 }
@@ -59,7 +65,15 @@ function flags(ctx: OrgContext, task: OrgTask, project: OrgProject | null) {
     canSubmit: (isAssignee || canEdit) && ["todo", "in_progress", "blocked", "backlog"].includes(task.status),
     canChangeStatus: isAssignee || canEdit,
     isAssignee,
+    canClaim: canClaim(ctx, task),
+    canRelease: task.openToClaim && isAssignee && ["backlog", "todo", "in_progress", "blocked"].includes(task.status),
   };
+}
+
+// Anyone with tasks.view can take an open task, unless it's reserved for a committee they're not in.
+function canClaim(ctx: OrgContext, task: OrgTask) {
+  return task.openToClaim && task.assigneeMembershipId == null && ["backlog", "todo"].includes(task.status) &&
+    can(ctx, "tasks.view") && (task.claimCommitteeId == null || ctx.committeeIds.includes(task.claimCommitteeId));
 }
 
 const assignee = alias(orgMembershipsTable, "assignee");
@@ -99,6 +113,7 @@ router.get("/tasks", async (req, res) => {
   else if (num(q.assignee)) conds.push(eq(orgTasksTable.assigneeMembershipId, num(q.assignee)!));
   if (q.reviewer === "me") conds.push(eq(orgTasksTable.reviewerMembershipId, ctx.membership.id));
   if (q.open === "true") conds.push(inArray(orgTasksTable.status, [...OPEN]));
+  if (q.claimable === "true") conds.push(and(eq(orgTasksTable.openToClaim, true), isNull(orgTasksTable.assigneeMembershipId), inArray(orgTasksTable.status, ["backlog", "todo"]))!);
   if (q.due === "overdue") conds.push(and(lt(orgTasksTable.dueDate, today()), notInArray(orgTasksTable.status, ["completed", "cancelled"]))!);
 
   const rows = await taskQuery().where(and(...conds)).orderBy(asc(orgTasksTable.position), desc(orgTasksTable.createdAt)).limit(2000);
@@ -137,8 +152,15 @@ const TaskSchema = z.object({
   priority: z.enum(PRIORITIES).default("medium"),
   status: z.enum(["backlog", "todo"]).default("todo"),
   evidenceRequired: z.boolean().default(false),
+  openToClaim: z.boolean().default(false),
+  claimCommitteeId: optionalId,
   dependsOn: z.array(z.coerce.number().int().positive()).max(20).default([]),
 });
+
+async function committeeInOrg(ctx: OrgContext, id: number) {
+  const [c] = await db.select({ id: orgCommitteesTable.id }).from(orgCommitteesTable).where(and(eq(orgCommitteesTable.id, id), eq(orgCommitteesTable.orgId, ctx.org.id)));
+  return Boolean(c);
+}
 
 async function activeMembership(ctx: OrgContext, id: number | null | undefined) {
   if (!id) return true;
@@ -176,6 +198,19 @@ router.post("/tasks", validateBody(TaskSchema), async (req, res) => {
   if (!allowed) {
     forbidden(res, "You can't create tasks here");
     return;
+  }
+  if (body.openToClaim) {
+    if (!can(ctx, "tasks.assign") && !(project && project.ownerMembershipId === ctx.membership.id)) {
+      forbidden(res, "Publishing open tasks needs the tasks.assign permission");
+      return;
+    }
+    body.assigneeMembershipId = null;
+    if (body.claimCommitteeId && !(await committeeInOrg(ctx, body.claimCommitteeId))) {
+      badRequest(res, "Committee not found");
+      return;
+    }
+  } else {
+    body.claimCommitteeId = null;
   }
   if (body.milestoneId) {
     const [ms] = await db.select({ projectId: orgMilestonesTable.projectId }).from(orgMilestonesTable)
@@ -221,6 +256,67 @@ router.post("/tasks", validateBody(TaskSchema), async (req, res) => {
     type: "task.assigned", title: `New task: ${task.title}`, body: task.dueDate ? `Due ${task.dueDate}` : undefined, link: `/tasks/${task.id}`, email: true,
   });
   res.status(201).json({ task });
+});
+
+// Take an open task. Atomic: if two people click at once, only the first gets it.
+router.post("/tasks/:id/claim", async (req, res) => {
+  const ctx = getOrg(req);
+  const id = idParam(req);
+  const found = await loadTask(ctx, id);
+  if (!found) {
+    // It may have just been taken (and so dropped out of your view): say so rather than "not found".
+    const [raw] = id ? await db.select({ open: orgTasksTable.openToClaim, committee: orgTasksTable.claimCommitteeId }).from(orgTasksTable)
+      .where(and(eq(orgTasksTable.id, id), eq(orgTasksTable.orgId, ctx.org.id))) : [];
+    if (raw?.open && can(ctx, "tasks.view") && (raw.committee == null || ctx.committeeIds.includes(raw.committee))) conflict(res, "Someone has already taken this task");
+    else notFound(res, "Task");
+    return;
+  }
+  const { task, project } = found;
+  if (!canClaim(ctx, task)) {
+    if (task.openToClaim && task.assigneeMembershipId != null) conflict(res, "Someone has already taken this task");
+    else forbidden(res, "This task isn't open for you to take");
+    return;
+  }
+  const claimed = await db.transaction(async (tx) => {
+    const [row] = await tx.update(orgTasksTable)
+      .set({ assigneeMembershipId: ctx.membership.id, status: "todo", updatedAt: new Date() })
+      .where(and(eq(orgTasksTable.id, task.id), eq(orgTasksTable.orgId, ctx.org.id), isNull(orgTasksTable.assigneeMembershipId)))
+      .returning();
+    if (row && project) {
+      await tx.insert(orgProjectMembersTable).values({ orgId: ctx.org.id, projectId: project.id, membershipId: ctx.membership.id }).onConflictDoNothing();
+    }
+    return row;
+  });
+  if (!claimed) {
+    conflict(res, "Someone has already taken this task");
+    return;
+  }
+  await recordOrgAudit({ orgId: ctx.org.id, actorUserId: ctx.userId, action: "task.claimed", entityType: "task", entityId: task.id, summary: task.title, after: { assigneeMembershipId: ctx.membership.id } });
+  notifyMembers(ctx.org.id, ctx.org.slug, [task.createdByMembershipId], ctx.userId, {
+    type: "task.claimed", title: `Open task taken: ${task.title}`, link: `/tasks/${task.id}`,
+  });
+  res.json({ task: claimed });
+});
+
+// Give an open task back so someone else can take it.
+router.post("/tasks/:id/release", async (req, res) => {
+  const ctx = getOrg(req);
+  const found = await loadTask(ctx, idParam(req));
+  if (!found) {
+    notFound(res, "Task");
+    return;
+  }
+  const { task, project } = found;
+  if (!flags(ctx, task, project).canRelease) {
+    forbidden(res, "Only the person who took this open task can give it back");
+    return;
+  }
+  const [row] = await db.update(orgTasksTable)
+    .set({ assigneeMembershipId: null, status: "todo", updatedAt: new Date() })
+    .where(and(eq(orgTasksTable.id, task.id), eq(orgTasksTable.orgId, ctx.org.id), eq(orgTasksTable.assigneeMembershipId, ctx.membership.id)))
+    .returning();
+  await recordOrgAudit({ orgId: ctx.org.id, actorUserId: ctx.userId, action: "task.released", entityType: "task", entityId: task.id, summary: task.title, before: { assigneeMembershipId: ctx.membership.id } });
+  res.json({ task: row });
 });
 
 router.get("/tasks/:id", async (req, res) => {
@@ -284,6 +380,10 @@ router.patch("/tasks/:id", validatePatch(UpdateTaskSchema), async (req, res) => 
   // (reassigning, dates, cancelling) needs edit rights.
   if (fieldKeys.length && !f.canEdit) {
     forbidden(res, "Only the task's manager can change these details");
+    return;
+  }
+  if (patch.claimCommitteeId && !(await committeeInOrg(ctx, patch.claimCommitteeId))) {
+    badRequest(res, "Committee not found");
     return;
   }
   if (patch.status !== undefined && patch.status !== task.status) {

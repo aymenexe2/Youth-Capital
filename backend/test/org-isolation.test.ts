@@ -788,3 +788,107 @@ describe("removing a member from an organisation", () => {
     assert.ok(again > 0 && again !== leaverId);
   });
 });
+
+describe("view permissions are enforced", () => {
+  test("a role with no view permissions sees only their own work", async () => {
+    const { role } = await ok(adminA, "POST", `/${slugA}/roles`, { name: `Nothing ${run}`, scope: "organisation", permissions: [] });
+    const nobody = await makeUser("noview");
+    const { link } = await ok(adminA, "POST", `/${slugA}/invitations`, { email: nobody.email, roleId: role.id });
+    await ok(nobody, "POST", `/invitations/${link.split("/invite/")[1]}/accept`);
+    const { me } = await ok(nobody, "GET", `/${slugA}`);
+    // Put them in a committee and give them a project task: membership alone must not reveal everything.
+    await ok(adminA, "POST", `/${slugA}/committees/${committeeA1}/members`, { membershipId: me.membershipId });
+    await ok(adminA, "POST", `/${slugA}/events`, { title: "Org-wide gala", startsAt: new Date(Date.now() + 86400000).toISOString() });
+    const mine = (await ok(adminA, "POST", `/${slugA}/tasks`, { title: "Their own task", projectId: projectA1, assigneeMembershipId: me.membershipId })).task.id;
+
+    assert.equal((await ok(nobody, "GET", `/${slugA}/projects`)).projects.length, 0);
+    assert.equal((await ok(nobody, "GET", `/${slugA}/events`)).events.length, 0);
+    assert.equal((await api(nobody, "GET", `/${slugA}/projects/${projectA1}`)).status, 404);
+    const members = (await ok(nobody, "GET", `/${slugA}/members`)).members;
+    assert.deepEqual(members.map((m: any) => m.membershipId), [me.membershipId]);
+    // Committees: only the one they belong to.
+    assert.deepEqual((await ok(nobody, "GET", `/${slugA}/committees`)).committees.map((c: any) => c.id), [committeeA1]);
+    assert.equal((await api(nobody, "GET", `/${slugA}/committees/${committeeA2}`)).status, 404);
+    // Their own assigned work stays reachable.
+    const tasks = (await ok(nobody, "GET", `/${slugA}/tasks`)).tasks;
+    assert.deepEqual(tasks.map((t: any) => t.id), [mine]);
+  });
+});
+
+describe("membership dues", () => {
+  test("first year is joining + annual, renewals are annual, and only managers can record payments", async () => {
+    const payer = await makeUser("payer");
+    const payerId = await invite(adminA, slugA, payer, "member");
+    const fresh = await ok(payer, "GET", `/${slugA}/dues/me`);
+    assert.deepEqual(
+      { j: fresh.fees.joiningFee, a: fresh.fees.annualFee, f: fresh.fees.firstYearTotal, r: fresh.fees.renewalFee, cur: fresh.fees.currency },
+      { j: 100, a: 200, f: 300, r: 200, cur: "MAD" },
+    );
+    assert.equal(fresh.verified, false);
+    assert.equal(fresh.amountDue, 300);
+
+    // Members can't mark themselves (or others) as paid, or read someone else's dues.
+    assert.equal((await api(payer, "POST", `/${slugA}/members/${payerId}/dues`, {})).status, 403);
+    assert.equal((await api(memberA, "GET", `/${slugA}/members/${payerId}/dues`)).status, 404);
+
+    const year = fresh.year;
+    const first = await ok(adminA, "POST", `/${slugA}/members/${payerId}/dues`, { method: "cash" });
+    assert.equal(first.dues.amount, 300);
+    assert.equal(first.dues.includesJoiningFee, true);
+    assert.equal((await api(adminA, "POST", `/${slugA}/members/${payerId}/dues`, {})).status, 409);
+
+    const after = await ok(payer, "GET", `/${slugA}/dues/me`);
+    assert.equal(after.verified, true);
+    assert.equal(after.amountDue, 0);
+    assert.equal((await ok(payer, "GET", `/${slugA}`)).me.verified, true);
+    const row = (await ok(adminA, "GET", `/${slugA}/members`)).members.find((m: any) => m.membershipId === payerId);
+    assert.equal(row.verified, true);
+
+    // Next year is a renewal at the annual fee.
+    const renewal = await ok(adminA, "POST", `/${slugA}/members/${payerId}/dues`, { year: year + 1 });
+    assert.equal(renewal.dues.amount, 200);
+    assert.equal(renewal.dues.includesJoiningFee, false);
+
+    // Undo removes the badge.
+    await ok(adminA, "DELETE", `/${slugA}/members/${payerId}/dues/${year}`);
+    assert.equal((await ok(payer, "GET", `/${slugA}/dues/me`)).verified, false);
+
+    // Fees are editable in settings.
+    await ok(adminA, "PATCH", `/${slugA}`, { joiningFee: 150, annualFee: 250 });
+    const changed = await ok(payer, "GET", `/${slugA}/dues/fees`);
+    assert.equal(changed.fees.firstYearTotal, 400);
+    await ok(adminA, "PATCH", `/${slugA}`, { joiningFee: 100, annualFee: 200 });
+  });
+});
+
+describe("open tasks", () => {
+  test("published open tasks can be claimed once by an eligible member and given back", async () => {
+    const a = await makeUser("claimerA");
+    const b = await makeUser("claimerB");
+    const aId = await invite(adminA, slugA, a, "member");
+    await invite(adminA, slugA, b, "member");
+
+    // Members can't publish open tasks.
+    assert.equal((await api(a, "POST", `/${slugA}/tasks`, { title: "Sneaky open task", openToClaim: true })).status, 403);
+
+    const open = (await ok(adminA, "POST", `/${slugA}/tasks`, { title: "Design the poster", openToClaim: true, assigneeMembershipId: aId })).task;
+    assert.equal(open.assigneeMembershipId, null, "an open task starts unassigned");
+    const reserved = (await ok(adminA, "POST", `/${slugA}/tasks`, { title: "Tech-only job", openToClaim: true, claimCommitteeId: committeeA1 })).task;
+
+    const listA = (await ok(a, "GET", `/${slugA}/tasks?claimable=true`)).tasks;
+    assert.ok(listA.some((t: any) => t.id === open.id && t.canClaim));
+    assert.ok(!listA.some((t: any) => t.id === reserved.id), "committee-only tasks are hidden from non-members");
+    assert.ok((await ok(memberA, "GET", `/${slugA}/tasks?claimable=true`)).tasks.some((t: any) => t.id === reserved.id && t.canClaim));
+
+    const [r1, r2] = await Promise.all([
+      api(a, "POST", `/${slugA}/tasks/${open.id}/claim`),
+      api(b, "POST", `/${slugA}/tasks/${open.id}/claim`),
+    ]);
+    assert.deepEqual([r1.status, r2.status].sort(), [200, 409], "only one person gets it");
+    const winner = r1.status === 200 ? a : b;
+    const loser = winner === a ? b : a;
+    assert.equal((await api(loser, "POST", `/${slugA}/tasks/${open.id}/release`)).status, 404, "taken tasks disappear for others");
+    await ok(winner, "POST", `/${slugA}/tasks/${open.id}/release`);
+    await ok(loser, "POST", `/${slugA}/tasks/${open.id}/claim`);
+  });
+});

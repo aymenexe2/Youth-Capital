@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "wouter";
 import {
   AlertTriangle, CalendarDays, Check, CheckCircle2, FileCheck2, FolderKanban, Link2, Loader2, MessageSquare, Paperclip, Pencil, Plus,
-  RotateCcw, Send, ShieldCheck, Trash2, X,
+  Hand, RotateCcw, Send, ShieldCheck, Trash2, Undo2, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -46,6 +46,8 @@ function TaskDetail({ taskId }: { taskId: number }) {
 
   const status = useOrgMutation((body: { status: string; reason?: string }, base) => api.patch(`${base}/tasks/${taskId}`, body), { success: "Task updated" });
   const submit = useOrgMutation((_: void, base) => api.post(`${base}/tasks/${taskId}/submit`, {}), { success: "Submitted for review" });
+  const claim = useOrgMutation((_: void, base) => api.post(`${base}/tasks/${taskId}/claim`, {}), { success: "The task is yours" });
+  const release = useOrgMutation((_: void, base) => api.post(`${base}/tasks/${taskId}/release`, {}), { success: "Task given back" });
   const review = useOrgMutation((body: { decision: "approve" | "return"; reason?: string }, base) => api.post(`${base}/tasks/${taskId}/review`, body), {
     onSuccess: () => { setReviewMode(null); setReason(""); },
   });
@@ -55,7 +57,7 @@ function TaskDetail({ taskId }: { taskId: number }) {
   }
   if (!q.data) return <div className="p-6 text-sm text-muted-foreground">{t("This task isn't available.")}</div>;
 
-  const { task, comments, dependencies, dependents, history, canEdit, canValidate, canSubmit, canChangeStatus } = q.data;
+  const { task, comments, dependencies, dependents, history, canEdit, canValidate, canSubmit, canChangeStatus, canClaim, canRelease } = q.data;
   const overdue = isOverdue(task.dueDate, task.status);
   const openDeps = dependencies.filter((d: any) => d.status !== "completed");
 
@@ -80,6 +82,16 @@ function TaskDetail({ taskId }: { taskId: number }) {
 
       {/* Workflow actions */}
       <div className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/40 px-5 py-3">
+        {canClaim && (
+          <Button size="sm" onClick={() => claim.mutate()} disabled={claim.isPending}>
+            {claim.isPending ? <Loader2 className="animate-spin" /> : <Hand />}{t("Take this task")}
+          </Button>
+        )}
+        {canRelease && (
+          <Button size="sm" variant="outline" onClick={() => release.mutate()} disabled={release.isPending}>
+            {release.isPending ? <Loader2 className="animate-spin" /> : <Undo2 />}{t("Give it back")}
+          </Button>
+        )}
         {canValidate && (
           <>
             <Button size="sm" onClick={() => review.mutate({ decision: "approve" })} disabled={review.isPending}>

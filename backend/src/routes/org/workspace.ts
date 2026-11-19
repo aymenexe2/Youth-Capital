@@ -6,9 +6,10 @@ import {
 import { and, eq, sql, count, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { validateBody } from "../../middlewares/validate.js";
-import { getOrg, requirePerm, can } from "../../lib/org/context.js";
+import { getOrg, requirePerm, can, type OrgContext } from "../../lib/org/context.js";
 import { ADMIN_ROLE_KEY, PERMISSIONS, PERMISSION_GROUPS, ROLE_SCOPES } from "../../lib/org/permissions.js";
 import { recordOrgAudit, diff } from "../../lib/org/audit.js";
+import { duesYear, paidSet } from "../../lib/org/dues.js";
 import { optionalHttpUrl } from "../../validation/common.js";
 import { badRequest, conflict, forbidden, idParam, notFound, optionalId, optionalText, validatePatch } from "./util.js";
 
@@ -17,8 +18,9 @@ import { badRequest, conflict, forbidden, idParam, notFound, optionalId, optiona
 const router: IRouter = Router({ mergeParams: true });
 
 // Bootstrap for the workspace app: the organisation plus who "I" am in it.
-router.get("/", (req, res) => {
+router.get("/", async (req, res) => {
   const ctx = getOrg(req);
+  const verified = (await paidSet(ctx.org.id, duesYear(ctx.org), [ctx.membership.id])).has(ctx.membership.id);
   res.json({
     organisation: ctx.org,
     me: {
@@ -32,6 +34,7 @@ router.get("/", (req, res) => {
       headCommitteeIds: ctx.headCommitteeIds,
       projectIds: ctx.projectIds,
       managedProjectIds: ctx.managedProjectIds,
+      verified,
     },
   });
 });
@@ -44,6 +47,8 @@ const UpdateOrgSchema = z.object({
   defaultLanguage: z.enum(["en", "fr", "ar"]),
   currency: z.string().trim().toUpperCase().length(3),
   timezone: z.string().trim().max(64),
+  joiningFee: z.coerce.number().min(0).max(1_000_000).transform((v) => v.toFixed(2)),
+  annualFee: z.coerce.number().min(0).max(1_000_000).transform((v) => v.toFixed(2)),
 });
 
 router.patch("/", requirePerm("org.manage"), validatePatch(UpdateOrgSchema), async (req, res) => {
@@ -207,9 +212,12 @@ router.delete("/regions/:id", requirePerm("regions.manage"), async (req, res) =>
 
 // ── Committees ──────────────────────────────────────────────────────────────
 
+const canSeeAllCommittees = (ctx: OrgContext) => can(ctx, "members.view") || can(ctx, "committees.manage");
+
 router.get("/committees", async (req, res) => {
   const ctx = getOrg(req);
-  const committees = await db.select().from(orgCommitteesTable).where(eq(orgCommitteesTable.orgId, ctx.org.id)).orderBy(orgCommitteesTable.name);
+  const all = await db.select().from(orgCommitteesTable).where(eq(orgCommitteesTable.orgId, ctx.org.id)).orderBy(orgCommitteesTable.name);
+  const committees = canSeeAllCommittees(ctx) ? all : all.filter((c) => ctx.committeeIds.includes(c.id));
   const [memberCounts, projectCounts, heads] = await Promise.all([
     db.select({ committeeId: orgCommitteeMembersTable.committeeId, n: count() }).from(orgCommitteeMembersTable)
       .where(eq(orgCommitteeMembersTable.orgId, ctx.org.id)).groupBy(orgCommitteeMembersTable.committeeId),
@@ -239,7 +247,7 @@ router.get("/committees/:id", async (req, res) => {
   const ctx = getOrg(req);
   const id = idParam(req);
   const [committee] = id ? await db.select().from(orgCommitteesTable).where(and(eq(orgCommitteesTable.id, id), eq(orgCommitteesTable.orgId, ctx.org.id))) : [];
-  if (!committee) {
+  if (!committee || (!canSeeAllCommittees(ctx) && !ctx.committeeIds.includes(committee.id))) {
     notFound(res, "Committee");
     return;
   }

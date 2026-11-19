@@ -38,7 +38,7 @@ router.get("/dashboard", async (req, res) => {
     db.select({ id: orgEventsTable.id, title: orgEventsTable.title, startsAt: orgEventsTable.startsAt, venue: orgEventsTable.venue, type: orgEventsTable.type, status: orgEventsTable.status })
       .from(orgEventsTable)
       .where(and(eq(orgEventsTable.orgId, ctx.org.id), gte(orgEventsTable.startsAt, new Date()), sql`${orgEventsTable.status} <> 'cancelled'`,
-        can(ctx, "events.view") && isOrgWide(ctx) ? sql`true` : or(
+        can(ctx, "events.view") && isOrgWide(ctx) ? sql`true` : !can(ctx, "events.view") ? eq(orgEventsTable.organiserMembershipId, me) : or(
           eq(orgEventsTable.organiserMembershipId, me),
           and(isNull(orgEventsTable.committeeId), isNull(orgEventsTable.projectId)),
           ctx.committeeIds.length ? inArray(orgEventsTable.committeeId, ctx.committeeIds) : sql`false`,

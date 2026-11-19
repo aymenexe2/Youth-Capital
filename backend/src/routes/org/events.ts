@@ -21,6 +21,7 @@ const STATUSES = ["planned", "confirmed", "completed", "cancelled"] as const;
 async function eventVisibility(ctx: OrgContext): Promise<SQL> {
   const tenant = eq(orgEventsTable.orgId, ctx.org.id);
   if (can(ctx, "events.view") && isOrgWide(ctx)) return tenant;
+  if (!can(ctx, "events.view")) return and(tenant, eq(orgEventsTable.organiserMembershipId, ctx.membership.id))!;
   const projects = await visibleProjectIds(ctx);
   const rules: SQL[] = [
     eq(orgEventsTable.organiserMembershipId, ctx.membership.id),

@@ -135,11 +135,46 @@ export default function DashboardPage() {
   );
 }
 
+// Mirrors the real layout (stat cards, three panels, two lists, activity) so nothing jumps when data arrives.
 function DashboardSkeleton() {
+  const card = "rounded-2xl border bg-card p-5";
+  const Lines = ({ n }: { n: number }) => (
+    <div className="space-y-3">
+      {Array.from({ length: n }).map((_, i) => (
+        <div key={i} className="flex items-center gap-3">
+          <Skeleton className="size-8 shrink-0 rounded-full" />
+          <div className="flex-1 space-y-1.5"><Skeleton className="h-3 w-3/4" /><Skeleton className="h-2.5 w-1/3" /></div>
+        </div>
+      ))}
+    </div>
+  );
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[84px] rounded-xl" />)}</div>
-      <div className="grid gap-6 xl:grid-cols-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-72 rounded-xl" />)}</div>
+    <div className="space-y-6" aria-busy="true">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className={`${card} flex items-center gap-4`}>
+            <Skeleton className="size-11 shrink-0 rounded-xl" />
+            <div className="flex-1 space-y-2"><Skeleton className="h-3 w-24" /><Skeleton className="h-6 w-14" /></div>
+          </div>
+        ))}
+      </div>
+      <div className="grid gap-6 xl:grid-cols-3">
+        <div className={card}>
+          <Skeleton className="mb-5 h-4 w-32" />
+          <div className="flex items-center gap-5"><Skeleton className="size-28 shrink-0 rounded-full" /><div className="flex-1 space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-3" />)}</div></div>
+          <div className="mt-6 flex h-16 items-end gap-2">{[40, 65, 30, 80, 55, 70].map((h, i) => <Skeleton key={i} className="flex-1 rounded-md" style={{ height: `${h}%` }} />)}</div>
+        </div>
+        <div className={card}><Skeleton className="mb-5 h-4 w-28" />{Array.from({ length: 4 }).map((_, i) => <div key={i} className="mb-4 space-y-2"><Skeleton className="h-3 w-2/3" /><Skeleton className="h-2 w-full rounded-full" /></div>)}</div>
+        <div className={card}><Skeleton className="mb-5 h-4 w-36" /><Lines n={4} /></div>
+      </div>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className={card}><Skeleton className="mb-5 h-4 w-28" /><Lines n={3} /></div>
+        <div className={card}><Skeleton className="mb-5 h-4 w-36" /><Lines n={3} /></div>
+      </div>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className={`${card} lg:col-span-2`}><Skeleton className="mb-5 h-4 w-32" /><Lines n={5} /></div>
+        <div className={card}><Skeleton className="mb-5 h-4 w-28" /><Lines n={5} /></div>
+      </div>
     </div>
   );
 }

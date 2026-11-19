@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useTheme } from "next-themes";
 import {
   Activity, Bell, BookOpenCheck, Building2, CalendarDays, Check, CheckSquare, ChevronsUpDown, FolderKanban, Globe, HandCoins,
-  HeartHandshake, LayoutDashboard, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sun, Trophy, Users, UsersRound, type LucideIcon,
+  HeartHandshake, LayoutDashboard, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sun, Trophy, UserRound, Users, UsersRound, type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LANGS, useI18n } from "@/lib/i18n";
@@ -20,7 +20,7 @@ import {
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { PersonAvatar } from "./primitives";
+import { PersonAvatar, VerifiedBadge } from "./primitives";
 
 type NavItem = { href: string; label: string; icon: LucideIcon; show?: boolean };
 
@@ -28,16 +28,16 @@ const COLLAPSE_KEY = "manage-sidebar-collapsed";
 
 function useNav() {
   const { t } = useI18n();
-  const { path, can } = useOrg();
+  const { path, can, me } = useOrg();
   const main: NavItem[] = [
     { href: path(""), label: t("Dashboard"), icon: LayoutDashboard },
-    { href: path("/members"), label: t("Members"), icon: Users },
-    { href: path("/committees"), label: t("Committees"), icon: UsersRound },
-    { href: path("/projects"), label: t("Projects"), icon: FolderKanban },
-    { href: path("/events"), label: t("Events"), icon: CalendarDays },
+    { href: path("/members"), label: t("Members"), icon: Users, show: can("members.view") },
+    { href: path("/committees"), label: t("Committees"), icon: UsersRound, show: can("members.view") || can("committees.manage") || me.committeeIds.length > 0 },
+    { href: path("/projects"), label: t("Projects"), icon: FolderKanban, show: can("projects.view") || can("projects.create") || can("projects.manage") },
+    { href: path("/events"), label: t("Events"), icon: CalendarDays, show: can("events.view") || can("events.manage") },
     { href: path("/tasks"), label: t("Tasks"), icon: CheckSquare },
     { href: path("/performance"), label: t("Performance"), icon: Trophy },
-    { href: path("/finance"), label: t("Finance"), icon: HandCoins },
+    { href: path("/finance"), label: t("Finance"), icon: HandCoins, show: can("finance.view") || can("finance.create_expense") || can("finance.approve") || can("finance.export") },
     { href: path("/accounting"), label: "Accounting Pro", icon: BookOpenCheck, show: can("accounting.view") },
     { href: path("/sponsors"), label: t("Sponsors"), icon: HeartHandshake, show: can("sponsors.manage") || can("sponsor.publish_update") || can("finance.view") },
     { href: path("/activity"), label: t("Activity"), icon: Activity },
@@ -255,7 +255,7 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
 
 function OrgUserMenu() {
   const { t } = useI18n();
-  const { org } = useOrg();
+  const { org, me, path } = useOrg();
   const { user } = useSession();
   const signOut = useSignOut();
   const [, navigate] = useLocation();
@@ -265,15 +265,16 @@ function OrgUserMenu() {
       <DropdownMenuTrigger asChild>
         <button type="button" className="flex items-center gap-2 rounded-full bg-muted py-1 pe-2.5 ps-1 text-sm transition-colors hover:bg-secondary">
           <PersonAvatar name={user?.fullName} url={user?.avatarUrl} size={28} />
-          <span className="hidden max-w-36 truncate font-medium md:inline">{user?.fullName}</span>
+          <span className="hidden max-w-36 items-center gap-1 font-medium md:inline-flex"><span className="truncate">{user?.fullName}</span><VerifiedBadge verified={me.verified} /></span>
           <ChevronsUpDown className="size-3.5 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
         <DropdownMenuLabel className="font-normal">
-          <div className="truncate text-sm font-medium">{user?.fullName}</div>
+          <div className="flex items-center gap-1 text-sm font-medium"><span className="truncate">{user?.fullName}</span><VerifiedBadge verified={me.verified} /></div>
           <div className="truncate text-xs text-muted-foreground">{user?.email}</div>
         </DropdownMenuLabel>
+        <DropdownMenuItem onSelect={() => navigate(path("/profile"))}><UserRound className="size-4" />{t("My profile")}</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">{t("Organisations")}</DropdownMenuLabel>
         {(orgs.data?.organisations ?? []).map((o) => (

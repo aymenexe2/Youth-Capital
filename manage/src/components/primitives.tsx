@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { AlertTriangle, Inbox, type LucideIcon } from "lucide-react";
+import { AlertTriangle, BadgeCheck, Inbox, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { initials } from "@/lib/format";
@@ -233,5 +233,17 @@ export function KeyValue({ label, children }: { label: string; children: ReactNo
       <dt className="shrink-0 text-muted-foreground">{label}</dt>
       <dd className="min-w-0 text-end font-medium text-foreground">{children}</dd>
     </div>
+  );
+}
+
+// Blue check shown next to a member's name once their dues for the current year are recorded.
+export function VerifiedBadge({ verified, className }: { verified?: boolean; className?: string }) {
+  const { t } = useI18n();
+  if (!verified) return null;
+  const label = t("Verified member — membership fees paid");
+  return (
+    <BadgeCheck role="img" aria-label={label} className={cn("inline size-[1.05em] shrink-0 fill-[#0a84ff] text-white", className)}>
+      <title>{label}</title>
+    </BadgeCheck>
   );
 }

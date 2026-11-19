@@ -132,9 +132,9 @@ const inIds = (col: any, ids: number[]): SQL => (ids.length ? inArray(col, ids) 
 export function projectVisibility(ctx: OrgContext): SQL {
   const tenant = eq(orgProjectsTable.orgId, ctx.org.id);
   if (can(ctx, "projects.view") && isOrgWide(ctx)) return tenant;
-  const mine = [inIds(orgProjectsTable.id, ctx.projectIds)];
-  if (can(ctx, "projects.view")) mine.push(inIds(orgProjectsTable.committeeId, ctx.committeeIds));
-  return and(tenant, or(...mine))!;
+  // Without projects.view, only projects you personally own.
+  if (!can(ctx, "projects.view")) return and(tenant, eq(orgProjectsTable.ownerMembershipId, ctx.membership.id))!;
+  return and(tenant, or(inIds(orgProjectsTable.id, ctx.projectIds), inIds(orgProjectsTable.committeeId, ctx.committeeIds)))!;
 }
 
 export async function visibleProjectIds(ctx: OrgContext): Promise<number[] | "all"> {

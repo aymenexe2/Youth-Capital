@@ -1,6 +1,6 @@
 import { useMemo, useState, type DragEvent } from "react";
 import { useLocation, useParams } from "wouter";
-import { AlertTriangle, CalendarDays, Download, FileCheck2, KanbanSquare, Link2, List, Plus, Search } from "lucide-react";
+import { AlertTriangle, CalendarDays, Download, FileCheck2, Hand, KanbanSquare, Link2, List, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
@@ -19,7 +19,10 @@ import { TaskDrawer } from "@/components/task-drawer";
 
 const BOARD_COLUMNS = ["backlog", "todo", "in_progress", "blocked", "in_review", "completed"] as const;
 type View = "board" | "list";
-type Quick = "all" | "mine" | "review" | "overdue";
+type Quick = "all" | "mine" | "open" | "review" | "overdue";
+
+// Unassigned work published for anyone eligible to take.
+const isOpenTask = (x: any) => x.openToClaim && !x.assigneeMembershipId && ["backlog", "todo"].includes(x.status);
 
 export default function TasksPage() {
   const { t } = useI18n();
@@ -42,6 +45,7 @@ export default function TasksPage() {
     const s = search.trim().toLowerCase();
     return (q.data?.tasks ?? []).filter((x) => {
       if (quick === "mine" && x.assigneeMembershipId !== me.membershipId) return false;
+      if (quick === "open" && !isOpenTask(x)) return false;
       if (quick === "review" && !(x.status === "in_review" && x.canValidate)) return false;
       if (quick === "overdue" && !isOverdue(x.dueDate, x.status)) return false;
       if (projectId && String(x.projectId) !== projectId) return false;
@@ -55,6 +59,7 @@ export default function TasksPage() {
     const all = q.data?.tasks ?? [];
     return {
       mine: all.filter((x) => x.assigneeMembershipId === me.membershipId && !["completed", "cancelled"].includes(x.status)).length,
+      open: all.filter((x) => isOpenTask(x) && x.canClaim).length,
       review: all.filter((x) => x.status === "in_review" && x.canValidate).length,
       overdue: all.filter((x) => isOverdue(x.dueDate, x.status)).length,
     };
@@ -74,6 +79,7 @@ export default function TasksPage() {
   const QUICK: { key: Quick; label: string; count?: number }[] = [
     { key: "all", label: t("All tasks") },
     { key: "mine", label: t("My tasks"), count: counts.mine },
+    { key: "open", label: t("Open tasks"), count: counts.open },
     { key: "review", label: t("To review"), count: counts.review },
     { key: "overdue", label: t("Overdue"), count: counts.overdue },
   ];
@@ -147,6 +153,7 @@ function TaskCard({ task, onOpen, draggable, onDragStart }: { task: any; onOpen:
       {task.projectTitle && <p className="mt-1 truncate text-xs text-muted-foreground">{task.projectTitle}</p>}
       <div className="mt-3 flex items-center gap-2">
         <PriorityPill priority={task.priority} />
+        {isOpenTask(task) && <span className="inline-flex items-center gap-1 rounded-full bg-st-green/15 px-1.5 py-0.5 text-[11px] font-semibold text-st-green"><Hand className="size-3" />{t("Open")}</span>}
         {task.evidenceRequired && <FileCheck2 className="size-3.5 text-gold" aria-label={t("Evidence required")} />}
         {task.blockedByOpenDependencies && <Link2 className="size-3.5 text-st-amber" aria-label={t("Waiting on prerequisites")} />}
         {task.dueDate && (

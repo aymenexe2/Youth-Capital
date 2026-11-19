@@ -10,7 +10,7 @@ import { useCommittees, useOrg, useOrgMutation, useOrgQuery, useRegions, useRole
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { EmptyState, ErrorState, Field, LoadingRows, PageHeader, PersonAvatar, Pill, Section, StatusPill } from "@/components/primitives";
+import { EmptyState, ErrorState, Field, LoadingRows, PageHeader, PersonAvatar, Pill, Section, StatusPill, VerifiedBadge } from "@/components/primitives";
 import { OptionSelect } from "@/components/pickers";
 import { FormDialog } from "@/components/forms";
 
@@ -107,7 +107,7 @@ function Directory() {
                       <div className="flex items-center gap-3">
                         <PersonAvatar name={m.fullName} url={m.avatarUrl} size={34} />
                         <div className="min-w-0">
-                          <div className="truncate font-medium">{m.fullName}</div>
+                          <div className="flex items-center gap-1 font-medium"><span className="truncate">{m.fullName}</span><VerifiedBadge verified={m.verified} /></div>
                           <div className="truncate text-xs text-muted-foreground" dir="ltr">{m.email}</div>
                         </div>
                       </div>

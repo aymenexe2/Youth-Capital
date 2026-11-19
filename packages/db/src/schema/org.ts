@@ -44,6 +44,9 @@ export const organisationsTable = pgTable("organisations", {
   taxId: text("tax_id"),
   registryNumber: text("registry_number"),
   address: text("address"),
+  // Membership dues in the organisation currency: first year = joining + annual, then annual.
+  joiningFee: numeric("joining_fee", { precision: 14, scale: 2 }).notNull().default("100"),
+  annualFee: numeric("annual_fee", { precision: 14, scale: 2 }).notNull().default("200"),
   createdById: integer("created_by_id").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: ts("created_at").notNull().defaultNow(),
   updatedAt: ts("updated_at").notNull().defaultNow(),
@@ -216,6 +219,9 @@ export const orgTasksTable = pgTable("org_tasks", {
   reviewerMembershipId: integer("reviewer_membership_id").references(() => orgMembershipsTable.id, { onDelete: "set null" }),
   dueDate: date("due_date"),
   evidenceRequired: boolean("evidence_required").notNull().default(false),
+  // Open task: unassigned work anyone eligible can claim (optionally only a committee's members).
+  openToClaim: boolean("open_to_claim").notNull().default(false),
+  claimCommitteeId: integer("claim_committee_id").references(() => orgCommitteesTable.id, { onDelete: "set null" }),
   // Kanban ordering within a status column.
   position: doublePrecision("position").notNull().default(0),
   submittedAt: ts("submitted_at"),
@@ -230,6 +236,26 @@ export const orgTasksTable = pgTable("org_tasks", {
   index("org_tasks_org_status_idx").on(t.orgId, t.status),
   index("org_tasks_project_idx").on(t.projectId),
   index("org_tasks_assignee_idx").on(t.assigneeMembershipId),
+]);
+
+// One row per membership per year once the dues are paid; its existence is the
+// "verified member" badge for that year. Admins record and can undo payments.
+export const orgMembershipDuesTable = pgTable("org_membership_dues", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().references(() => organisationsTable.id, { onDelete: "cascade" }),
+  membershipId: integer("membership_id").notNull().references(() => orgMembershipsTable.id, { onDelete: "cascade" }),
+  year: integer("year").notNull(),
+  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  includesJoiningFee: boolean("includes_joining_fee").notNull().default(false),
+  method: text("method"),
+  reference: text("reference"),
+  note: text("note"),
+  paidAt: ts("paid_at").notNull().defaultNow(),
+  recordedByMembershipId: integer("recorded_by_membership_id").references(() => orgMembershipsTable.id, { onDelete: "set null" }),
+  createdAt: ts("created_at").notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("org_membership_dues_member_year_idx").on(t.membershipId, t.year),
+  index("org_membership_dues_org_year_idx").on(t.orgId, t.year),
 ]);
 
 export const orgTaskDependenciesTable = pgTable("org_task_dependencies", {
@@ -642,3 +668,4 @@ export type OrgCommittee = typeof orgCommitteesTable.$inferSelect;
 export type OrgProject = typeof orgProjectsTable.$inferSelect;
 export type OrgEvent = typeof orgEventsTable.$inferSelect;
 export type OrgTask = typeof orgTasksTable.$inferSelect;
+export type OrgMembershipDue = typeof orgMembershipDuesTable.$inferSelect;

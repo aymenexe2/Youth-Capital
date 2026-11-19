@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, IconTile } from "@/components/primitives";
 import { LanguageMenu, ThemeToggle } from "@/components/shell";
+import { Splash } from "@/components/splash";
 
 const OAUTH_ERRORS: Record<string, string> = {
   cancelled: "Sign-in was cancelled.",
@@ -33,6 +34,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [entering, setEntering] = useState(false);
   const providers = useQuery({ queryKey: ["oauth-providers"], queryFn: () => api.get<{ google: boolean; linkedin: boolean }>("/api/auth/oauth/providers") });
 
   useEffect(() => {
@@ -41,7 +43,16 @@ export default function LoginPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Coming back with the browser's Back button from Google restores this page from cache: drop the splash.
+  useEffect(() => {
+    const onShow = (e: PageTransitionEvent) => { if (e.persisted) setEntering(false); };
+    window.addEventListener("pageshow", onShow);
+    return () => window.removeEventListener("pageshow", onShow);
+  }, []);
+
   if (!isLoading && user) return <Redirect to={next} />;
+  // While we check for an existing session (or right after signing in), show the splash, not a flash of the form.
+  if (isLoading || entering) return <Splash />;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -49,6 +60,7 @@ export default function LoginPage() {
     setError(null);
     try {
       await api.post("/api/auth/login", { email: email.trim(), password });
+      setEntering(true);
       await qc.invalidateQueries({ queryKey: ["session"] });
       navigate(next);
     } catch (err) {
@@ -61,6 +73,7 @@ export default function LoginPage() {
 
   // Pass the destination through the provider round trip (e.g. back to an invitation).
   const oauth = (p: "google" | "linkedin") => {
+    setEntering(true);
     window.location.href = `${API_URL}/api/auth/oauth/${p}?${new URLSearchParams({ app: "manage", ...(next !== "/" ? { next } : {}) })}`;
   };
 

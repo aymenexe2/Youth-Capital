@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState, ErrorState, Field, KeyValue, PersonAvatar, Pill, Section, StatusPill, TASK_TONE, TONE_DOT } from "@/components/primitives";
+import { EmptyState, ErrorState, Field, KeyValue, PersonAvatar, Pill, Section, StatusPill, TASK_TONE, TONE_DOT, VerifiedBadge } from "@/components/primitives";
+import { MembershipDues } from "@/components/dues";
 import { OptionSelect } from "@/components/pickers";
 import { FormDialog } from "@/components/forms";
 import { Badge } from "./performance";
@@ -31,7 +32,7 @@ export default function MemberDetailPage() {
 
   if (q.isLoading) return <div className="space-y-4"><Skeleton className="h-24 w-full rounded-xl" /><Skeleton className="h-48 w-full rounded-xl" /></div>;
   if (q.error || !q.data) return <ErrorState message={t("This member's profile isn't available to you.")} />;
-  const { member: m, canEdit, canChangeRole, canDelete } = q.data;
+  const { member: m, canEdit, canChangeRole, canDelete, canManageDues } = q.data;
   const totalTasks = Object.values(m.taskStats as Record<string, number>).reduce((a, n) => a + n, 0);
 
   return (
@@ -41,7 +42,7 @@ export default function MemberDetailPage() {
         <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
           <PersonAvatar name={m.fullName} url={m.avatarUrl} size={72} />
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2"><h1 className="text-xl font-semibold">{m.fullName}</h1><StatusPill kind="membership" status={m.status} /></div>
+            <div className="flex flex-wrap items-center gap-2"><h1 className="flex items-center gap-1.5 text-xl font-semibold">{m.fullName}<VerifiedBadge verified={m.verified} /></h1><StatusPill kind="membership" status={m.status} /></div>
             <p className="text-sm text-muted-foreground">{m.title ?? m.roleName}{m.regionId && ` · ${regionById.get(m.regionId)?.name ?? ""}`}</p>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
               <a href={`mailto:${m.email}`} className="inline-flex items-center gap-1.5 text-primary hover:underline" dir="ltr"><Mail className="size-3.5" />{m.email}</a>
@@ -56,6 +57,8 @@ export default function MemberDetailPage() {
           )}
         </div>
       </Section>
+
+      {canManageDues && <MembershipDues membershipId={m.membershipId} manage />}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Section title={t("Membership")}>

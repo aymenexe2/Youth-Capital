@@ -7,12 +7,14 @@ import { useI18n } from "@/lib/i18n";
 export type Organisation = {
   id: number; slug: string; name: string; description: string | null; logoUrl: string | null; primaryColor: string | null;
   defaultLanguage: string; currency: string; timezone: string; country: string;
+  joiningFee?: string; annualFee?: string;
 };
 export type Me = {
   membershipId: number; title: string | null; regionId: number | null;
   role: { id: number; key: string; name: string };
   scope: "organisation" | "committee" | "region" | "assigned";
   permissions: string[]; committeeIds: number[]; headCommitteeIds: number[]; projectIds: number[]; managedProjectIds: number[];
+  verified?: boolean;
 };
 export type Person = { membershipId: number; fullName: string; avatarUrl: string | null; title: string | null; regionId: number | null };
 

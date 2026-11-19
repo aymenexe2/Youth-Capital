@@ -11,9 +11,28 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cairo:wght@400;600;700&display=swap" rel="stylesheet" />
+    <!-- Splash: shown instantly while the app and the session check load (pure CSS; React reuses it). -->
+    <style>
+      .yc-splash{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;
+        background:radial-gradient(40rem 30rem at 0% 0%,rgb(56 132 255/.55),transparent 60%),radial-gradient(36rem 28rem at 100% 100%,rgb(88 86 214/.45),transparent 60%),linear-gradient(160deg,#0b2a6b 0%,#0a3d9e 55%,#1f56d6 100%);
+        color:#fff;font-family:Inter,Cairo,system-ui,sans-serif;transition:opacity .35s ease}
+      .yc-splash img{height:64px;width:auto;animation:yc-breathe 2.4s ease-in-out infinite}
+      .yc-splash-label{font-size:12px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;opacity:.75}
+      .yc-splash-bar{position:relative;width:160px;height:3px;border-radius:99px;background:rgb(255 255 255/.18);overflow:hidden}
+      .yc-splash-bar::after{content:"";position:absolute;inset:0;width:40%;border-radius:99px;background:#fff;animation:yc-slide 1.15s cubic-bezier(.65,0,.35,1) infinite}
+      @keyframes yc-slide{0%{transform:translateX(-110%)}100%{transform:translateX(260%)}}
+      @keyframes yc-breathe{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.85;transform:scale(.97)}}
+      @media (prefers-reduced-motion:reduce){.yc-splash img,.yc-splash-bar::after{animation:none}}
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="yc-splash" role="status" aria-label="Loading">
+        <img src="/youth_capital_logo_dark.svg" alt="Youth Capital" />
+        <div class="yc-splash-label">Workspace</div>
+        <div class="yc-splash-bar"></div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
