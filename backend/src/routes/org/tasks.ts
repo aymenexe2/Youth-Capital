@@ -1,7 +1,8 @@
+import crypto from "crypto";
 import { Router, type IRouter } from "express";
 import {
   db, orgTasksTable, orgTaskCommentsTable, orgTaskDependenciesTable, orgProjectsTable, orgEventsTable, orgMilestonesTable,
-  orgProjectMembersTable, orgMembershipsTable, orgCommitteesTable, orgAuditEventsTable, orgFilesTable, usersTable, type OrgTask, type OrgProject,
+  orgProjectMembersTable, orgMembershipsTable, orgCommitteesTable, orgCommitteeMembersTable, orgAuditEventsTable, orgFilesTable, usersTable, type OrgTask, type OrgProject,
 } from "@workspace/db";
 import { and, eq, or, inArray, ne, lt, lte, gte, notInArray, isNull, sql, desc, asc, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -154,6 +155,8 @@ const TaskSchema = z.object({
   status: z.enum(["backlog", "todo"]).default("todo"),
   evidenceRequired: z.boolean().default(false),
   openToClaim: z.boolean().default(false),
+  // Everyone concerned must do it: one copy per member of the audience (committee, else project team, else whole organisation).
+  assignToAll: z.boolean().default(false),
   claimCommitteeId: optionalId,
   dependsOn: z.array(z.coerce.number().int().positive()).max(20).default([]),
 });
@@ -168,6 +171,86 @@ async function activeMembership(ctx: OrgContext, id: number | null | undefined) 
   const [m] = await db.select({ id: orgMembershipsTable.id }).from(orgMembershipsTable)
     .where(and(eq(orgMembershipsTable.id, id), eq(orgMembershipsTable.orgId, ctx.org.id), eq(orgMembershipsTable.status, "active"), isNull(orgMembershipsTable.sponsorId)));
   return Boolean(m);
+}
+
+// Everyone's copy of a group task, for the people managing it.
+async function batchProgress(ctx: OrgContext, batchId: string) {
+  const rows = await db.select({ id: orgTasksTable.id, status: orgTasksTable.status, membershipId: orgTasksTable.assigneeMembershipId, fullName: usersTable.fullName, avatarUrl: usersTable.avatarUrl })
+    .from(orgTasksTable)
+    .leftJoin(orgMembershipsTable, eq(orgMembershipsTable.id, orgTasksTable.assigneeMembershipId))
+    .leftJoin(usersTable, eq(usersTable.id, orgMembershipsTable.userId))
+    .where(and(eq(orgTasksTable.orgId, ctx.org.id), eq(orgTasksTable.batchId, batchId)))
+    .orderBy(usersTable.fullName);
+  return {
+    id: batchId, total: rows.length,
+    completed: rows.filter((r) => r.status === "completed").length,
+    inReview: rows.filter((r) => r.status === "in_review").length,
+    members: rows,
+  };
+}
+
+// Members a "task for everyone" goes to: the committee if one is chosen, otherwise the
+// project team, otherwise every active member. The creator doesn't get a copy.
+async function audienceFor(ctx: OrgContext, committeeId: number | null, projectId: number | null): Promise<number[]> {
+  const active = and(eq(orgMembershipsTable.orgId, ctx.org.id), eq(orgMembershipsTable.status, "active"), isNull(orgMembershipsTable.sponsorId));
+  let rows: { id: number }[];
+  if (committeeId) {
+    rows = await db.select({ id: orgMembershipsTable.id }).from(orgCommitteeMembersTable)
+      .innerJoin(orgMembershipsTable, eq(orgMembershipsTable.id, orgCommitteeMembersTable.membershipId))
+      .where(and(active, eq(orgCommitteeMembersTable.committeeId, committeeId)));
+  } else if (projectId) {
+    rows = await db.select({ id: orgMembershipsTable.id }).from(orgProjectMembersTable)
+      .innerJoin(orgMembershipsTable, eq(orgMembershipsTable.id, orgProjectMembersTable.membershipId))
+      .where(and(active, eq(orgProjectMembersTable.projectId, projectId)));
+  } else {
+    rows = await db.select({ id: orgMembershipsTable.id }).from(orgMembershipsTable).where(active);
+  }
+  return [...new Set(rows.map((r) => r.id))].filter((id) => id !== ctx.membership.id);
+}
+
+const MAX_GROUP = 1000;
+
+async function createForEveryone(
+  req: any, res: any, ctx: OrgContext, project: OrgProject | null,
+  fields: Omit<z.infer<typeof TaskSchema>, "assignToAll" | "dependsOn">, dependsOn: number[],
+) {
+  const audience = await audienceFor(ctx, fields.claimCommitteeId ?? null, project?.id ?? null);
+  if (audience.length === 0) {
+    badRequest(res, "There's nobody in this group to assign the task to");
+    return;
+  }
+  if (audience.length > MAX_GROUP) {
+    badRequest(res, `This group has more than ${MAX_GROUP} members — pick a committee or project instead`);
+    return;
+  }
+  const batchId = crypto.randomUUID();
+  const [{ maxPos }] = await db.select({ maxPos: sql<number>`coalesce(max(${orgTasksTable.position}), 0)` }).from(orgTasksTable)
+    .where(and(eq(orgTasksTable.orgId, ctx.org.id), eq(orgTasksTable.status, fields.status)));
+  const copies = await db.transaction(async (tx) => {
+    const rows = await tx.insert(orgTasksTable).values(audience.map((membershipId, i) => ({
+      ...fields, orgId: ctx.org.id, createdByMembershipId: ctx.membership.id, position: Number(maxPos) + 1 + i, batchId,
+      assigneeMembershipId: membershipId,
+      // Nobody validates their own copy: if the reviewer is in the group, their copy falls back to the managers.
+      reviewerMembershipId: fields.reviewerMembershipId === membershipId ? null : fields.reviewerMembershipId,
+    }))).returning();
+    if (dependsOn.length) {
+      await tx.insert(orgTaskDependenciesTable).values(rows.flatMap((r) => [...new Set(dependsOn)].map((d) => ({ orgId: ctx.org.id, taskId: r.id, dependsOnTaskId: d }))));
+    }
+    if (project) {
+      await tx.insert(orgProjectMembersTable).values(audience.map((membershipId) => ({ orgId: ctx.org.id, projectId: project.id, membershipId }))).onConflictDoNothing();
+    }
+    return rows;
+  });
+  await recordOrgAudit({
+    orgId: ctx.org.id, actorUserId: ctx.userId, action: "task.created", entityType: "task", entityId: copies[0].id,
+    summary: `${fields.title} — assigned to ${copies.length} members`, after: { batchId, count: copies.length, committeeId: fields.claimCommitteeId, dueDate: fields.dueDate },
+  });
+  for (const c of copies) {
+    notifyMembers(ctx.org.id, ctx.org.slug, [c.assigneeMembershipId], ctx.userId, {
+      type: "task.assigned", title: `New task: ${c.title}`, body: c.dueDate ? `Due ${c.dueDate}` : undefined, link: `/tasks/${c.id}`, email: true,
+    });
+  }
+  res.status(201).json({ task: copies[0], batch: { id: batchId, count: copies.length } });
 }
 
 router.post("/tasks", validateBody(TaskSchema), async (req, res) => {
@@ -200,18 +283,45 @@ router.post("/tasks", validateBody(TaskSchema), async (req, res) => {
     forbidden(res, "You can't create tasks here");
     return;
   }
+  const { assignToAll, ...fields } = body;
+  if (assignToAll && fields.openToClaim) {
+    badRequest(res, "Choose either a task for everyone or an open task, not both");
+    return;
+  }
+  if (assignToAll) {
+    if (fields.claimCommitteeId && !(await committeeInOrg(ctx, fields.claimCommitteeId))) {
+      badRequest(res, "Committee not found");
+      return;
+    }
+    // Who may hand work to a whole group: org-wide task managers; committee heads for their committee; project managers for their team.
+    const mayAssignGroup = can(ctx, "tasks.assign") && (
+      isOrgWide(ctx) ||
+      (fields.claimCommitteeId != null && ctx.headCommitteeIds.includes(fields.claimCommitteeId)) ||
+      (fields.claimCommitteeId == null && project != null && canManageProject(ctx, project))
+    );
+    if (!mayAssignGroup) {
+      forbidden(res, "You can't assign a task to this whole group");
+      return;
+    }
+    if (!(await activeMembership(ctx, fields.reviewerMembershipId))) {
+      badRequest(res, "Reviewer not found");
+      return;
+    }
+    await createForEveryone(req, res, ctx, project, { ...fields, openToClaim: false, assigneeMembershipId: null }, dependsOn);
+    return;
+  }
   if (body.openToClaim) {
     if (!can(ctx, "tasks.assign") && !(project && project.ownerMembershipId === ctx.membership.id)) {
       forbidden(res, "Publishing open tasks needs the tasks.assign permission");
       return;
     }
-    body.assigneeMembershipId = null;
+    fields.assigneeMembershipId = null;
     if (body.claimCommitteeId && !(await committeeInOrg(ctx, body.claimCommitteeId))) {
       badRequest(res, "Committee not found");
       return;
     }
   } else {
-    body.claimCommitteeId = null;
+    fields.claimCommitteeId = null;
   }
   if (body.milestoneId) {
     const [ms] = await db.select({ projectId: orgMilestonesTable.projectId }).from(orgMilestonesTable)
@@ -221,11 +331,11 @@ router.post("/tasks", validateBody(TaskSchema), async (req, res) => {
       return;
     }
   }
-  if (!(await activeMembership(ctx, body.assigneeMembershipId)) || !(await activeMembership(ctx, body.reviewerMembershipId))) {
+  if (!(await activeMembership(ctx, fields.assigneeMembershipId)) || !(await activeMembership(ctx, fields.reviewerMembershipId))) {
     badRequest(res, "Assignee or reviewer not found");
     return;
   }
-  if (body.reviewerMembershipId && body.reviewerMembershipId === body.assigneeMembershipId) {
+  if (fields.reviewerMembershipId && fields.reviewerMembershipId === fields.assigneeMembershipId) {
     badRequest(res, "The reviewer must be someone other than the assignee");
     return;
   }
@@ -241,14 +351,14 @@ router.post("/tasks", validateBody(TaskSchema), async (req, res) => {
     .where(and(eq(orgTasksTable.orgId, ctx.org.id), eq(orgTasksTable.status, body.status)));
   const task = await db.transaction(async (tx) => {
     const [task] = await tx.insert(orgTasksTable).values({
-      ...body, orgId: ctx.org.id, createdByMembershipId: ctx.membership.id, position: Number(maxPos) + 1,
+      ...fields, orgId: ctx.org.id, createdByMembershipId: ctx.membership.id, position: Number(maxPos) + 1,
     }).returning();
     if (dependsOn.length) {
       await tx.insert(orgTaskDependenciesTable).values([...new Set(dependsOn)].map((d) => ({ orgId: ctx.org.id, taskId: task.id, dependsOnTaskId: d })));
     }
     // Assignees join the project team so they can see its context.
-    if (project && body.assigneeMembershipId) {
-      await tx.insert(orgProjectMembersTable).values({ orgId: ctx.org.id, projectId: project.id, membershipId: body.assigneeMembershipId }).onConflictDoNothing();
+    if (project && fields.assigneeMembershipId) {
+      await tx.insert(orgProjectMembersTable).values({ orgId: ctx.org.id, projectId: project.id, membershipId: fields.assigneeMembershipId }).onConflictDoNothing();
     }
     return task;
   });
@@ -276,6 +386,19 @@ router.delete("/tasks/:id", async (req, res) => {
     return;
   }
   const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 1000) : "";
+  if (req.query.scope === "batch" && task.batchId) {
+    const keepCompleted = !(can(ctx, "tasks.assign") && isOrgWide(ctx));
+    const removed = await db.delete(orgTasksTable).where(and(
+      eq(orgTasksTable.orgId, ctx.org.id), eq(orgTasksTable.batchId, task.batchId),
+      keepCompleted ? ne(orgTasksTable.status, "completed") : sql`true`,
+    )).returning({ id: orgTasksTable.id });
+    await recordOrgAudit({
+      orgId: ctx.org.id, actorUserId: ctx.userId, action: "task.deleted", entityType: "task", entityId: task.id,
+      summary: `${task.title} — removed for ${removed.length} members`, reason: reason || null, before: { batchId: task.batchId },
+    });
+    res.json({ success: true, removed: removed.length });
+    return;
+  }
   await db.delete(orgTasksTable).where(and(eq(orgTasksTable.id, task.id), eq(orgTasksTable.orgId, ctx.org.id)));
   await recordOrgAudit({
     orgId: ctx.org.id, actorUserId: ctx.userId, action: "task.deleted", entityType: "task", entityId: task.id, summary: task.title,
@@ -380,11 +503,12 @@ router.get("/tasks/:id", async (req, res) => {
     comments: comments.map(({ comment, ...a }) => ({ ...comment, ...a })),
     dependencies, dependents,
     history: history.map(({ event, actorName }) => ({ ...event, actorName })),
+    batch: task.batchId && canEditTask(ctx, task, project) ? await batchProgress(ctx, task.batchId) : null,
     ...flags(ctx, task, project),
   });
 });
 
-const UpdateTaskSchema = TaskSchema.omit({ status: true, dependsOn: true, projectId: true }).extend({
+const UpdateTaskSchema = TaskSchema.omit({ status: true, dependsOn: true, projectId: true, assignToAll: true }).extend({
   status: z.enum(DIRECT_STATUSES).optional(),
   position: z.number().finite().optional(),
   reason: z.string().trim().max(1000).optional(),
@@ -457,6 +581,17 @@ router.patch("/tasks/:id", validatePatch(UpdateTaskSchema), async (req, res) => 
   const set: Partial<OrgTask> = { ...patch, updatedAt: new Date() };
   if (patch.status && task.status === "completed") Object.assign(set, { completedAt: null, validatedAt: null, validatedByMembershipId: null });
   const { position: _p, ...auditable } = patch;
+  // Group tasks: apply detail changes (not status/assignee/reviewer) to everyone's copy.
+  if (req.query.scope === "batch" && task.batchId) {
+    const shared: Record<string, unknown> = {};
+    for (const k of ["title", "description", "definitionOfDone", "dueDate", "priority", "evidenceRequired"] as const) {
+      if ((patch as any)[k] !== undefined) shared[k] = (patch as any)[k];
+    }
+    if (Object.keys(shared).length) {
+      await db.update(orgTasksTable).set({ ...shared, updatedAt: new Date() })
+        .where(and(eq(orgTasksTable.orgId, ctx.org.id), eq(orgTasksTable.batchId, task.batchId)));
+    }
+  }
   const changes = diff(task, auditable);
   const [updated] = await db.update(orgTasksTable).set(set).where(eq(orgTasksTable.id, task.id)).returning();
 

@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { Loader2 } from "lucide-react";
+import { Hand, Loader2, UserRound, UsersRound } from "lucide-react";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { api } from "@/lib/api";
 import { EVENT_STATUS, EVENT_TYPE, PRIORITY, PROJECT_STATUS } from "@/lib/labels";
@@ -64,11 +66,11 @@ export function TaskFormDialog({ open, onOpenChange, task, defaults, onSaved }: 
       title: task.title, description: task.description ?? "", definitionOfDone: task.definitionOfDone ?? "",
       assigneeMembershipId: task.assigneeMembershipId, reviewerMembershipId: task.reviewerMembershipId,
       dueDate: task.dueDate ?? "", priority: task.priority, evidenceRequired: task.evidenceRequired,
-      openToClaim: !!task.openToClaim, claimCommitteeId: task.claimCommitteeId ?? null,
+      openToClaim: !!task.openToClaim, claimCommitteeId: task.claimCommitteeId ?? null, applyToAll: true,
     } : {
       title: "", description: "", definitionOfDone: "", projectId: defaults?.projectId ?? null, eventId: defaults?.eventId ?? null,
       assigneeMembershipId: null, reviewerMembershipId: null, dueDate: "", priority: "medium", evidenceRequired: false,
-      openToClaim: false, claimCommitteeId: null,
+      openToClaim: false, claimCommitteeId: null, mode: "person",
       status: defaults?.status === "backlog" ? "backlog" : "todo",
     });
   }, [open, task, defaults?.projectId, defaults?.eventId, defaults?.status]);
@@ -83,9 +85,18 @@ export function TaskFormDialog({ open, onOpenChange, task, defaults, onSaved }: 
   const canPublishOpen = !personalOnly && can("tasks.assign");
   const { committees } = useCommittees();
 
+  // Editing a "task for everyone" can update every member's copy at once.
+  const batchEdit = !!task?.batchId && !!f.applyToAll;
   const save = useOrgMutation(
-    (body: any, base) => (task ? api.patch(`${base}/tasks/${task.id}`, body) : api.post(`${base}/tasks`, body)),
-    { success: task ? "Task updated" : "Task created", onSuccess: (d: any) => { onOpenChange(false); onSaved?.(d.task); } },
+    (body: any, base) => (task ? api.patch(`${base}/tasks/${task.id}${batchEdit ? "?scope=batch" : ""}`, body) : api.post(`${base}/tasks`, body)),
+    {
+      success: task ? "Task updated" : "Task created",
+      onSuccess: (d: any) => {
+        onOpenChange(false);
+        if (d.batch) toast.success(t("Assigned to {n} members", { n: d.batch.count }));
+        onSaved?.(d.task);
+      },
+    },
   );
   const submit = () => {
     const body: any = {
@@ -93,9 +104,15 @@ export function TaskFormDialog({ open, onOpenChange, task, defaults, onSaved }: 
       assigneeMembershipId: personalOnly ? me.membershipId : f.assigneeMembershipId, reviewerMembershipId: f.reviewerMembershipId,
       dueDate: f.dueDate || null, priority: f.priority, evidenceRequired: f.evidenceRequired,
     };
-    if (canPublishOpen) {
+    if (canPublishOpen && !task) {
+      const mode = f.mode ?? "person";
+      Object.assign(body, {
+        openToClaim: mode === "open", assignToAll: mode === "everyone",
+        claimCommitteeId: mode === "person" ? null : f.claimCommitteeId,
+      });
+      if (mode !== "person") body.assigneeMembershipId = null;
+    } else if (canPublishOpen && task && !task.batchId && !task.assigneeMembershipId) {
       Object.assign(body, { openToClaim: !!f.openToClaim, claimCommitteeId: f.openToClaim ? f.claimCommitteeId : null });
-      if (f.openToClaim && !task) body.assigneeMembershipId = null;
     }
     if (!task) Object.assign(body, { projectId: f.projectId, eventId: f.eventId, status: f.status });
     save.mutate(body);
@@ -118,7 +135,42 @@ export function TaskFormDialog({ open, onOpenChange, task, defaults, onSaved }: 
       <Field label={t("Definition of done")} htmlFor="task-dod" hint={t("What exactly must be delivered for this to count as complete.")}>
         <Textarea id="task-dod" rows={2} value={f.definitionOfDone ?? ""} onChange={(e) => set("definitionOfDone", e.target.value)} maxLength={3000} />
       </Field>
-      {canPublishOpen && (!task || !task.assigneeMembershipId) && (
+      {canPublishOpen && !task && (
+        <Field label={t("Who does it?")}>
+          <div className="grid gap-2 sm:grid-cols-3" role="radiogroup">
+            {([
+              ["person", UserRound, t("One person"), t("You choose who.")],
+              ["everyone", UsersRound, t("Everyone concerned"), t("Each person gets their own copy, does it and earns the points.")],
+              ["open", Hand, t("First to take it"), t("Anyone eligible can take it; it's done once.")],
+            ] as const).map(([value, Icon, label, hint]) => (
+              <button key={value} type="button" role="radio" aria-checked={(f.mode ?? "person") === value} onClick={() => set("mode", value)}
+                className={cn("flex flex-col items-start gap-1 rounded-xl border p-3 text-start transition-colors",
+                  (f.mode ?? "person") === value ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border hover:bg-muted/60")}>
+                <span className="flex items-center gap-2 text-sm font-medium"><Icon className="size-4 text-primary" />{label}</span>
+                <span className="text-xs text-muted-foreground">{hint}</span>
+              </button>
+            ))}
+          </div>
+        </Field>
+      )}
+      {canPublishOpen && !task && f.mode && f.mode !== "person" && (
+        <Field label={f.mode === "everyone" ? t("Who must do it") : t("Who can take it")}
+          hint={f.mode === "everyone" ? t("Everyone in this group gets the task, except you.") : undefined}>
+          <OptionSelect value={f.claimCommitteeId} onChange={(v) => set("claimCommitteeId", v ? Number(v) : null)}
+            options={committees.map((c: any) => ({ value: c.id, label: t("Members of {name}", { name: c.name }) }))} allowNone
+            noneLabel={f.mode === "everyone" && f.projectId ? t("Everyone on the project team") : t("Anyone in the organisation")} />
+        </Field>
+      )}
+      {task?.batchId && (
+        <label className="flex items-center justify-between gap-4 rounded-lg border border-border p-3">
+          <span>
+            <span className="block text-sm font-medium">{t("Apply to everyone's copy")}</span>
+            <span className="block text-xs text-muted-foreground">{t("Title, description, due date and priority change for every member who got this task.")}</span>
+          </span>
+          <Switch checked={!!f.applyToAll} onCheckedChange={(v) => set("applyToAll", v)} />
+        </label>
+      )}
+      {canPublishOpen && task && !task.batchId && !task.assigneeMembershipId && (
         <div className="space-y-3 rounded-lg border border-border p-3">
           <label className="flex items-center justify-between gap-4">
             <span>
@@ -127,17 +179,11 @@ export function TaskFormDialog({ open, onOpenChange, task, defaults, onSaved }: 
             </span>
             <Switch checked={!!f.openToClaim} onCheckedChange={(v) => set("openToClaim", v)} />
           </label>
-          {f.openToClaim && (
-            <Field label={t("Who can take it")}>
-              <OptionSelect value={f.claimCommitteeId} onChange={(v) => set("claimCommitteeId", v ? Number(v) : null)}
-                options={committees.map((c: any) => ({ value: c.id, label: t("Members of {name}", { name: c.name }) }))} allowNone noneLabel={t("Anyone in the organisation")} />
-            </Field>
-          )}
         </div>
       )}
       {!personalOnly && (
         <div className="grid gap-4 sm:grid-cols-2">
-          {!(f.openToClaim && !task?.assigneeMembershipId) && <Field label={t("Assignee")}>
+          {(task ? !(f.openToClaim && !task.assigneeMembershipId) && !task.batchId : (f.mode ?? "person") === "person") && <Field label={t("Assignee")}>
             <PersonPicker value={f.assigneeMembershipId} onChange={(v) => set("assigneeMembershipId", v)} exclude={[f.reviewerMembershipId]} />
           </Field>}
           <Field label={t("Reviewer")} hint={t("Validates the work. Can't be the assignee.")}>

@@ -943,3 +943,63 @@ describe("editing points, deleting tasks and projects", () => {
     assert.match(r.body.message, /budgets or financial transactions/);
   });
 });
+
+describe("task for everyone", () => {
+  test("each member of the group gets their own copy, is approved separately and earns their own points", async () => {
+    const committee = (await ok(adminA, "POST", `/${slugA}/committees`, { name: `Outreach ${run}` })).committee.id;
+    const p1 = await makeUser("everyone1");
+    const p2 = await makeUser("everyone2");
+    const outside = await makeUser("everyone3");
+    const id1 = await invite(adminA, slugA, p1, "member");
+    const id2 = await invite(adminA, slugA, p2, "member");
+    await invite(adminA, slugA, outside, "member");
+    for (const m of [id1, id2]) await ok(adminA, "POST", `/${slugA}/committees/${committee}/members`, { membershipId: m });
+
+    // Members can't hand work to a whole group.
+    assert.equal((await api(p1, "POST", `/${slugA}/tasks`, { title: "Spam everyone", assignToAll: true })).status, 403);
+
+    const created = await ok(adminA, "POST", `/${slugA}/tasks`, { title: "Share the campaign post", assignToAll: true, claimCommitteeId: committee });
+    assert.equal(created.batch.count, 2, "one copy per committee member");
+
+    const mine1 = (await ok(p1, "GET", `/${slugA}/tasks?assignee=me`)).tasks.filter((t: any) => t.batchId === created.batch.id);
+    const mine2 = (await ok(p2, "GET", `/${slugA}/tasks?assignee=me`)).tasks.filter((t: any) => t.batchId === created.batch.id);
+    assert.equal(mine1.length, 1);
+    assert.equal(mine2.length, 1);
+    assert.notEqual(mine1[0].id, mine2[0].id);
+    assert.ok(!(await ok(outside, "GET", `/${slugA}/tasks`)).tasks.some((t: any) => t.batchId === created.batch.id), "people outside the group get nothing");
+
+    // p1 finishes and is approved; p2 hasn't done it yet.
+    await ok(p1, "POST", `/${slugA}/tasks/${mine1[0].id}/submit`, {});
+    await ok(adminA, "POST", `/${slugA}/tasks/${mine1[0].id}/review`, { decision: "approve" });
+    const before2 = (await ok(adminA, "GET", `/${slugA}/performance/members/${id2}`)).total;
+    const pts1 = (await ok(adminA, "GET", `/${slugA}/performance/members/${id1}`)).history;
+    assert.ok(pts1.some((h: any) => h.sourceType === "task" && h.sourceId === mine1[0].id && h.points > 0), "p1 earned points for their copy");
+
+    // Managers see the group's progress.
+    const detail = await ok(adminA, "GET", `/${slugA}/tasks/${mine2[0].id}`);
+    assert.equal(detail.batch.total, 2);
+    assert.equal(detail.batch.completed, 1);
+
+    // p2 does it too and earns their own points.
+    await ok(p2, "POST", `/${slugA}/tasks/${mine2[0].id}/submit`, {});
+    await ok(adminA, "POST", `/${slugA}/tasks/${mine2[0].id}/review`, { decision: "approve" });
+    assert.ok((await ok(adminA, "GET", `/${slugA}/performance/members/${id2}`)).total > before2);
+
+    // Editing "for everyone" updates every copy.
+    const again = await ok(adminA, "POST", `/${slugA}/tasks`, { title: "Old title", assignToAll: true, claimCommitteeId: committee });
+    const anyCopy = (await ok(p1, "GET", `/${slugA}/tasks?assignee=me`)).tasks.find((t: any) => t.batchId === again.batch.id);
+    const patch = await fetch(`${base}/api/org/${slugA}/tasks/${anyCopy.id}?scope=batch`, {
+      method: "PATCH", headers: { "x-session-token": adminA.token, "content-type": "application/json", "x-forwarded-for": "10.201.0.1" },
+      body: JSON.stringify({ title: "New title" }),
+    });
+    assert.equal(patch.status, 200);
+    const p2Copy = (await ok(p2, "GET", `/${slugA}/tasks?assignee=me`)).tasks.find((t: any) => t.batchId === again.batch.id);
+    assert.equal(p2Copy.title, "New title");
+
+    // Deleting "for everyone" removes all copies.
+    const del = await fetch(`${base}/api/org/${slugA}/tasks/${anyCopy.id}?scope=batch`, {
+      method: "DELETE", headers: { "x-session-token": adminA.token, "x-forwarded-for": "10.201.0.2" },
+    });
+    assert.equal((await del.json()).removed, 2);
+  });
+});

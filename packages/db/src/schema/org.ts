@@ -222,6 +222,8 @@ export const orgTasksTable = pgTable("org_tasks", {
   // Open task: unassigned work anyone eligible can claim (optionally only a committee's members).
   openToClaim: boolean("open_to_claim").notNull().default(false),
   claimCommitteeId: integer("claim_committee_id").references(() => orgCommitteesTable.id, { onDelete: "set null" }),
+  // "Everyone must do it": one copy per concerned member, all sharing this group id.
+  batchId: text("batch_id"),
   // Kanban ordering within a status column.
   position: doublePrecision("position").notNull().default(0),
   submittedAt: ts("submitted_at"),
@@ -236,6 +238,7 @@ export const orgTasksTable = pgTable("org_tasks", {
   index("org_tasks_org_status_idx").on(t.orgId, t.status),
   index("org_tasks_project_idx").on(t.projectId),
   index("org_tasks_assignee_idx").on(t.assigneeMembershipId),
+  index("org_tasks_batch_idx").on(t.orgId, t.batchId),
 ]);
 
 // One row per membership per year once the dues are paid; its existence is the

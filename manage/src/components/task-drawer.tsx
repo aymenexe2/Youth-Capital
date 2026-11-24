@@ -48,7 +48,8 @@ function TaskDetail({ taskId, onClose }: { taskId: number; onClose: () => void }
   const status = useOrgMutation((body: { status: string; reason?: string }, base) => api.patch(`${base}/tasks/${taskId}`, body), { success: "Task updated" });
   const submit = useOrgMutation((_: void, base) => api.post(`${base}/tasks/${taskId}/submit`, {}), { success: "Submitted for review" });
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const removeTask = useOrgMutation((_: void, base) => api.del(`${base}/tasks/${taskId}`), {
+  const [deleteAll, setDeleteAll] = useState(false);
+  const removeTask = useOrgMutation((_: void, base) => api.del(`${base}/tasks/${taskId}${deleteAll ? "?scope=batch" : ""}`), {
     success: "Task deleted", onSuccess: () => { setConfirmDelete(false); onClose(); },
   });
   const claim = useOrgMutation((_: void, base) => api.post(`${base}/tasks/${taskId}/claim`, {}), { success: "The task is yours" });
@@ -62,7 +63,7 @@ function TaskDetail({ taskId, onClose }: { taskId: number; onClose: () => void }
   }
   if (!q.data) return <div className="p-6 text-sm text-muted-foreground">{t("This task isn't available.")}</div>;
 
-  const { task, comments, dependencies, dependents, history, canEdit, canValidate, canSubmit, canChangeStatus, canClaim, canRelease, canDelete } = q.data;
+  const { task, comments, dependencies, dependents, history, canEdit, canValidate, canSubmit, canChangeStatus, canClaim, canRelease, canDelete, batch } = q.data;
   const overdue = isOverdue(task.dueDate, task.status);
   const openDeps = dependencies.filter((d: any) => d.status !== "completed");
 
@@ -164,6 +165,8 @@ function TaskDetail({ taskId, onClose }: { taskId: number; onClose: () => void }
           </div>
         )}
 
+        {batch && <GroupProgress batch={batch} currentId={task.id} />}
+
         <Dependencies task={task} dependencies={dependencies} dependents={dependents} canEdit={canEdit} />
 
         <Tabs defaultValue="activity">
@@ -196,7 +199,18 @@ function TaskDetail({ taskId, onClose }: { taskId: number; onClose: () => void }
         title={t("Delete this task?")}
         description={t("Its comments, attachments and history are deleted. Points already awarded for it are kept. This can't be undone.")}
         confirmLabel={t("Delete task")}
-      />
+      >
+        {batch && (
+          <div className="grid gap-2" role="radiogroup">
+            {([[false, t("Only this copy ({name})", { name: task.assigneeName ?? "—" })], [true, t("Everyone's copy ({n})", { n: batch.total - batch.completed })]] as const).map(([v, label]) => (
+              <label key={String(v)} className={cn("flex cursor-pointer items-center gap-2 rounded-lg border p-2.5 text-sm", deleteAll === v ? "border-primary bg-primary/5" : "border-border")}>
+                <input type="radio" name="del-scope" checked={deleteAll === v} onChange={() => setDeleteAll(v)} className="accent-[var(--primary)]" />{label}
+              </label>
+            ))}
+            {deleteAll && batch.completed > 0 && <p className="text-xs text-muted-foreground">{t("Completed copies are kept unless you manage tasks for the whole organisation.")}</p>}
+          </div>
+        )}
+      </ConfirmDelete>
       <TaskFormDialog open={editing} onOpenChange={setEditing} task={task} />
       <FormDialog
         open={reviewMode === "return"} onOpenChange={(o) => !o && setReviewMode(null)} title={t("Request changes")}
@@ -371,6 +385,38 @@ function Dependencies({ task, dependencies, dependents, canEdit }: { task: any; 
       )}
       {dependents.length > 0 && (
         <p className="mt-2 text-xs text-muted-foreground">{t("Blocks")}: {dependents.map((d) => d.title).join(", ")}</p>
+      )}
+    </div>
+  );
+}
+
+// Who has done a "task for everyone", for the people managing it.
+function GroupProgress({ batch, currentId }: { batch: any; currentId: number }) {
+  const { t } = useI18n();
+  const { path } = useOrg();
+  const [open, setOpen] = useState(false);
+  const pct = batch.total ? Math.round((batch.completed / batch.total) * 100) : 0;
+  return (
+    <div className="rounded-xl border border-border p-3">
+      <button type="button" className="flex w-full items-center gap-3 text-start" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-medium">{t("Assigned to everyone — {done} of {total} done", { done: batch.completed, total: batch.total })}</span>
+          <span className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-muted"><span className="block h-full rounded-full bg-st-green" style={{ width: `${pct}%` }} /></span>
+        </span>
+        <span className="text-xs text-muted-foreground">{batch.inReview > 0 && t("{n} to review", { n: batch.inReview })}</span>
+      </button>
+      {open && (
+        <ul className="mt-3 max-h-64 divide-y divide-border overflow-y-auto">
+          {batch.members.map((m: any) => (
+            <li key={m.id}>
+              <Link href={path(`/tasks/${m.id}`)} className={cn("flex items-center gap-2 py-1.5 text-sm hover:text-primary", m.id === currentId && "font-semibold")}>
+                <PersonAvatar name={m.fullName} url={m.avatarUrl} size={22} />
+                <span className="min-w-0 flex-1 truncate">{m.fullName ?? "—"}</span>
+                <StatusPill kind="task" status={m.status} />
+              </Link>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
